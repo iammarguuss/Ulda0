@@ -11,6 +11,19 @@ app.use(express.static('public'));
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+app.use('/socket.io', express.static(path.join(__dirname, 'node_modules', 'socket.io', 'client-dist')));
+
+io.on('connection', (socket) => {
+    console.log(`New client connected: ${socket.id}`);
+
+    socket.on('ping', () => {
+        socket.emit('pong', Date.now());
+    });
+
+    socket.on('disconnect', () => {
+        console.log(`Client disconnected: ${socket.id}`);
+    });
+});
 
 
 server.listen(5555, () => {
