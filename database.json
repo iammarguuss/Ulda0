@@ -1,0 +1,11 @@
+{
+    "dev": {
+      "driver": "pg",
+      "user": "${PGUSER}",
+      "database": "${PGDATABASE}",
+      "password": "${PGPASSWORD}",
+      "host": "${PGHOST}",
+      "port": "${PGPORT}"
+    }
+  }
+  

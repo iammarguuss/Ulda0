@@ -11,3 +11,10 @@ u.pulse(latency => {
     }
 });
 
+u.MainFileRegister('secretPassword', (response) => {
+    if (response.status === 'success') {
+        console.log('Master file created successfully:', response);
+    } else {
+        console.log('Failed to create master file:', response.error);
+    }
+});
