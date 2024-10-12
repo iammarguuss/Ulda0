@@ -11,9 +11,6 @@ const io = socketIo(server);
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false
-    }
 });
 
 pool.query('SELECT NOW()', (err, res) => {
@@ -21,10 +18,10 @@ pool.query('SELECT NOW()', (err, res) => {
         console.error('Error executing query', err.stack);
     } else {
         console.log('Connection to PostgreSQL established:', res.rows[0].now); 
-    }
+    } 
 });
-
-app.use(express.static('public'));
+ 
+app.use(express.static('public')); 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -33,20 +30,34 @@ app.use('/socket.io', express.static(path.join(__dirname, 'node_modules', 'socke
 io.on('connection', (socket) => {
     console.log(`New client connected: ${socket.id}`);
 
-
+    // Just make sure that server is working
     socket.on('CanIRegister', (data, callback) => {   // ask to register
         console.log(`Received CanIRegister from ${socket.id}`);
         callback(true);
     });
 
-    socket.on('RegisterFile', (data, callback) => {
+    //Recive and save file to data base and give responce
+    socket.on('RegisterFile', async (data, callback) => {
         console.log(`Received RegisterFile from ${socket.id}`);
-                                                                    // TODO actually register file
-        callback({ code: 200 });                                    // TODO change it here
+        try {
+            // Подготовка SQL-запроса для вставки данных в базу
+            const insertQuery = 'INSERT INTO master_files (content, signchain, itter) VALUES ($1, $2, $3) RETURNING id;';
+            const values = [data.encryptedFile, data.signatures, 0]; // iteration начинаем с 0
+    
+            // Выполнение запроса к базе данных
+            const res = await pool.query(insertQuery, values);
+    
+            // Возвращаем ID новой записи клиенту
+            callback({ id: res.rows[0].id });
+        } catch (error) {
+            console.error('Error saving file:', error);
+            callback({ error: 'Error saving file' });
+        }
     });
 
 
 
+    // pulse
     socket.on('ping', () => {
         socket.emit('pong', Date.now());
     });

@@ -50,6 +50,10 @@ class ulda {
             //console.log('Generated signatures:', File.fun);
             //console.log('First Hash line)):', linkedHashes);
             console.log('Encrypted file:', encryptedFile);
+
+            const signaturesJSON = JSON.stringify(linkedHashes);
+            const fileData = { encryptedFile: encryptedFile, signatures: signaturesJSON };
+
             if(!this.connection.status){
                 //TODO Change later
                 alert("Server is down, what are you doing?");
@@ -59,9 +63,9 @@ class ulda {
             this.socket.emit('CanIRegister', {}, (response) => {
                 if (response === true) {
                     console.log("Server is up and ready to regiter you");
-                    this.socket.emit('RegisterFile', { encryptedFile: encryptedFile }, (serverResponse) => {
-                        if (serverResponse.code) {
-                            callback({ status: 'success', code: serverResponse.code, file: File });
+                    this.socket.emit('RegisterFile', fileData, (serverResponse) => {
+                        if (serverResponse.id) {
+                            callback({ status: 'success', code: serverResponse.id, file: File });
                         } else {
                             callback({ status: 'error', error: 'Failed to register file' });
                         }
