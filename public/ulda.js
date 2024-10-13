@@ -47,7 +47,7 @@ class ulda0 {
             };
 
             File.fun = await this.MainFileMethods.SignCreate(10);
-            const linkedHashes = await this.MainFileMethods.SignGenerator(File.fun);
+            const linkedHashes = await this.MainFileMethods.SignGenerator(File.fun,5);
             const encryptedFile = await this.MainFileMethods.FileEncr(File, password);
             //console.log('Generated signatures:', File.fun);
             //console.log('First Hash line)):', linkedHashes);
@@ -105,7 +105,32 @@ class ulda0 {
         });
     }
 
+    async SignPrep(itter, chain){   //createtes signaters++
+        let localChain = chain;
+        const randomBytes = new Uint8Array(32);
+        window.crypto.getRandomValues(randomBytes);
+        const base64String = btoa(String.fromCharCode(...randomBytes)).slice(0, 42); 
+        localChain[itter+10] = base64String;
+        let newItter = itter + 1;
+        let NewChain = {};
 
+        for (let i = newItter; i < newItter+5; i++) {
+            NewChain[i] = localChain[i];
+            console.log()
+        }
+
+        NewChain = await this.MainFileMethods.SignGenerator(NewChain,newItter);
+        console.log(NewChain)
+        return {
+            newfun:localChain,
+            publicChain:NewChain,
+            itter:newItter
+        }
+    }
+
+    async FileUpdat(password,File){
+
+    }
 
 
 
@@ -142,12 +167,12 @@ class ulda0 {
         },
         // SignGenerator creates a linked chain of hashes from initial signatures, 
         // incrementing hash iterations for each subsequent signature to enhance security.
-        SignGenerator: async (signatures) => {
+        SignGenerator: async (signatures,itter = 0) => {
             const linkedHashes = {};
             let previousHash = '';
-            for (let i = 0; i < 5; i++) {  
+            for (let i = itter; i < itter+5; i++) {  
                 let currentHash = signatures[i];
-                for (let j = 0; j <= i; j++) {
+                for (let j = itter; j <= itter+i; j++) {
                     const data = new TextEncoder().encode(previousHash + currentHash);
                     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
                     currentHash = Array.from(new Uint8Array(hashBuffer))

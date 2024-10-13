@@ -42,7 +42,7 @@ io.on('connection', (socket) => {
         try {
             // Подготовка SQL-запроса для вставки данных в базу
             const insertQuery = 'INSERT INTO master_files (content, signchain, itter) VALUES ($1, $2, $3) RETURNING id;';
-            const values = [data.encryptedFile, data.signatures, 0]; // iteration начинаем с 0
+            const values = [data.encryptedFile, data.signatures, 5]; // iteration начинаем с 5
     
             // Выполнение запроса к базе данных
             const res = await pool.query(insertQuery, values);

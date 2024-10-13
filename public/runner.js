@@ -17,7 +17,13 @@ u.MainFileRegister('secretPassword', (response) => {
 });
 
 
-// GetFile
-u.GetFile(23, "secretPassword", (data, error) => {
+// GetFile, just load the files 
+u.GetFile(58, "secretPassword", (data, error) => {
     console.log("We got the file and what we got : ", data);
+
+    ////////////////////TEST/////////////////////////
+    //console.log("Test of the overwriter: ")
+    u.SignPrep(u.MainFile.itter,u.MainFile.content.fun);
+    ////////////////////TEST/////////////////////////
+
 });
