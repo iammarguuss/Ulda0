@@ -1,7 +1,9 @@
-class ulda {
+class ulda0 {
     settings = {
         host:'http://localhost:5555',
     }
+
+    MainFile;
 
     constructor() {
         this.connection = {
@@ -82,6 +84,50 @@ class ulda {
         }
     }
 
+    GetFile(id, password, callback) {
+        this.socket.emit('RequestFile', { id: id, password: password }, async (response) => {
+            if (response.error) {
+                console.error('There were no file!');
+                callback(null, response.error);
+            } else {
+                try {
+                    const signchainJson = this.GetFileMethods.FirstRead(response.data.signchain);
+                    const decryptedContent = await this.GetFileMethods.ContentDecr(new Uint8Array(response.data.content), password);
+                    const contentJson = this.GetFileMethods.FirstRead(decryptedContent);
+                    const itter = parseInt(response.data.itter);
+                    this.MainFile = { signchain: signchainJson, content: contentJson, itter: itter }
+                    callback({status:true}, null);
+                } catch (error) {
+                    console.error('Decryption failed:', error);
+                    callback(null, error);
+                }
+            }
+        });
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     MainFileMethods = {
         SignCreate: async (number) => {
             const signatures = {};
@@ -160,6 +206,51 @@ class ulda {
             return combined;
         }
     }
+
+    GetFileMethods = {
+        FirstRead: (data) => {
+            return JSON.parse(data);
+        },
+        ContentDecr: async (data, password) => {
+            const decoder = new TextDecoder();
+            const encoder = new TextEncoder();
+            const salt = data.slice(0, 16);
+            const iv = data.slice(16, 28);
+            const encryptedData = data.slice(28);
+
+            const keyMaterial = await crypto.subtle.importKey(
+                "raw",
+                encoder.encode(password),
+                { name: "PBKDF2" },
+                false,
+                ["deriveKey"]
+            );
+
+            const key = await crypto.subtle.deriveKey(
+                {
+                    name: "PBKDF2",
+                    salt: salt,
+                    iterations: 100000,
+                    hash: "SHA-256"
+                },
+                keyMaterial,
+                { name: "AES-GCM", length: 256 },
+                false,
+                ["decrypt"]
+            );
+
+            const decryptedData = await crypto.subtle.decrypt(
+                {
+                    name: "AES-GCM",
+                    iv: iv
+                },
+                key,
+                encryptedData
+            );
+
+            return decoder.decode(decryptedData);
+        }
+    };
 
 }
 

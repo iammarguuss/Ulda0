@@ -55,7 +55,23 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('RequestFile', async (data, callback) => {
+        try {
+            const { id } = data;
+            const query = 'SELECT * FROM master_files WHERE id = $1';
+            const { rows } = await pool.query(query, [id]);
 
+            if (rows.length > 0) {
+                const fileData = rows[0];
+                callback({ data: fileData });  // Отправляем данные файла обратно клиенту
+            } else {
+                callback({ error: 'File not found' });
+            }
+        } catch (error) {
+            console.error('Error retrieving file:', error);
+            callback({ error: 'Error retrieving file' });
+        }
+    });
 
     // pulse
     socket.on('ping', () => {

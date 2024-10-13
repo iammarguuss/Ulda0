@@ -1,4 +1,4 @@
-const u = new ulda;
+const u = new ulda0;
 
 console.log(u);
 
@@ -11,6 +11,13 @@ u.pulse(latency => {
     }
 });
 
+//We registered file!
 u.MainFileRegister('secretPassword', (response) => {
         console.log('We have registered, I think : ', response);
+});
+
+
+// GetFile
+u.GetFile(23, "secretPassword", (data, error) => {
+    console.log("We got the file and what we got : ", data);
 });
