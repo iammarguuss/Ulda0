@@ -110,7 +110,7 @@ class ulda0 {
         const randomBytes = new Uint8Array(32);
         window.crypto.getRandomValues(randomBytes);
         const base64String = btoa(String.fromCharCode(...randomBytes)).slice(0, 42); 
-        localChain[itter+10] = base64String;
+        localChain[itter+5] = base64String;
         let newItter = itter + 1;
         let NewChain = {};
 
