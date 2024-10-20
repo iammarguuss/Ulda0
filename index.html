@@ -6,13 +6,38 @@
     <title>Index?</title>
     <meta name='viewport' content='width=device-width, initial-scale=1'>
     <script src='ulda.js'></script>
-
     <script>
+        document.addEventListener('DOMContentLoaded', async function() {
+            await createMasterFileSignatures();   // Если требуется инициализация
+            console.log("Initial MasterFile:", MasterFile);
+    
+            // Первый StepUp
+            //await StepUpSignaturesUpdate(); - works
+            console.log("MasterFile after first StepUp:", MasterFile);
+    
+            // Генерация связанных хешей после первого StepUp
+            const linkedHashes = await generateLinkedHashes(MasterFile.signatures);
+            console.log("Generated linked hashes after first StepUp:", linkedHashes);
+    
+            // Второй StepUp
+            await StepUpSignaturesUpdate();
+            console.log("MasterFile after second StepUp:", MasterFile);
+    
+            // Генерация связанных хешей после второго StepUp
+            const newLinkedHashes = await generateLinkedHashes(MasterFile.signatures);  // Убедись, что используется правильное имя переменной
+            console.log("Generated linked hashes after second StepUp:", newLinkedHashes);
+    
+            await validateHashChain(linkedHashes, newLinkedHashes);
 
 
 
+
+        });
     </script>
+    
 </head>
 <body>
 </body>
 </html>
+
+
