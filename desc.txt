@@ -96,6 +96,15 @@ u.DeleteContent(index).then(() => {
 
 u.die().then => delete connetion and local files
 
+u.MasterPassChange(old_password,new_password).*then((responce) =>
+    {
+        res:{
+            status:true/false,
+            error:null*
+        },
+    }
+)
+
 ..................................aditional methods*..................................
 u.pulse(latency => {}) // test latency if the server is reachable ...
 
