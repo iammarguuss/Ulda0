@@ -84,6 +84,7 @@ u.updateContent(index, json_content_new).then(() => {
     //update all u.connect
 })
 As an idea *update json directly*
+https://chatgpt.com/share/671634dc-976c-8001-809c-87dc324db581
 
 u.DeleteContent(index).then(() => {
     res:{
