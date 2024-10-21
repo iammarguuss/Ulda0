@@ -1,9 +1,3 @@
-// Структура MasterFile
-const MasterFile = {
-    signatures: {},  // Подписи для изменения самого мастерфайла
-    files: {}        // Содержит информацию о файлах: { fileID: { key, index }, ... }
-};
-
 // Функция для генерации подписей
 async function generateSignatures(signatureCount) {
     const signatures = [];
@@ -108,4 +102,166 @@ async function validateHashChain(oldHashes, newHashes) {
     }
 
     return allValid;
+}
+
+////////////////////////////////////////////////////////////////////
+
+async function encryptFile(fileData, password, salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12)), iterations = 100000, pbkdf2Salt = crypto.getRandomValues(new Uint8Array(16))) {
+    fileData = JSON.stringify(fileData)
+    const encoder = new TextEncoder();
+    
+    // Преобразуем пароль в ключ, используя PBKDF2
+    const keyMaterial = await crypto.subtle.importKey(
+        "raw",
+        encoder.encode(password),
+        "PBKDF2",
+        false,
+        ["deriveKey"]
+    );
+
+    // Параметры для PBKDF2
+    const keyDeriveParams = {
+        name: "PBKDF2",
+        salt: pbkdf2Salt,
+        iterations: iterations,
+        hash: "SHA-256"
+    };
+
+    // Создание ключа для AES-GCM
+    const key = await crypto.subtle.deriveKey(
+        keyDeriveParams,
+        keyMaterial,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt"]
+    );
+
+    // Шифрование файла
+    const encryptedData = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: iv },
+        key,
+        encoder.encode(fileData)
+    );
+
+    // Формируем результат
+    const result = {
+        encryptedData: encryptedData, // Зашифрованные данные как ArrayBuffer
+        params: {
+            iterations: iterations,
+            salt: Array.from(salt).map(b => b.toString(16).padStart(2, '0')).join(''),
+            iv: Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join(''),
+            pbkdf2Salt: Array.from(pbkdf2Salt).map(b => b.toString(16).padStart(2, '0')).join('')
+        }
+    };
+
+    // Возвращаем объект с ArrayBuffer и параметрами в JSON
+    return result;
+}
+
+async function decryptFile(encryptedFile, password) {
+    const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+
+    // Разбор JSON с зашифрованными данными и параметрами
+    const { encryptedData, params } = encryptedFile;
+
+    // Преобразуем параметры обратно из шестнадцатеричной строки в байты
+    const iv = new Uint8Array(params.iv.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+    const salt = new Uint8Array(params.salt.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+    const pbkdf2Salt = new Uint8Array(params.pbkdf2Salt.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+
+    // Импортируем пароль как ключ для PBKDF2
+    const keyMaterial = await crypto.subtle.importKey(
+        "raw",
+        encoder.encode(password),
+        "PBKDF2",
+        false,
+        ["deriveKey"]
+    );
+
+    // Деривация ключа AES-GCM из пароля
+    const key = await crypto.subtle.deriveKey(
+        {
+            name: "PBKDF2",
+            salt: pbkdf2Salt,
+            iterations: params.iterations,
+            hash: "SHA-256"
+        },
+        keyMaterial,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["decrypt"]
+    );
+
+    // Расшифровка данных
+    const decryptedData = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: iv },
+        key,
+        encryptedData
+    );
+
+    return JSON.parse(decoder.decode(decryptedData));
+}
+
+async function encryptContentFile(fileData, password, iv = crypto.getRandomValues(new Uint8Array(12))) {
+    const encoder = new TextEncoder();
+
+    // Генерация хеша SHA-256 из пароля
+    const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(password));
+    const keyBuffer = hashBuffer.slice(0, 32); // Обрезаем до 256 бит, если нужно
+
+    // Импорт ключа из хеша для AES-GCM
+    const key = await crypto.subtle.importKey(
+        "raw",
+        keyBuffer,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt"]
+    );
+
+    // Шифрование файла
+    const encryptedData = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: iv },
+        key,
+        encoder.encode(JSON.stringify(fileData))
+    );
+
+    return {
+        encryptedData: encryptedData,
+        iv: Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join('')
+    };
+}
+
+async function decryptContentFile(encryptedFile, password) {
+    const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+
+    // Преобразование IV обратно в тип Uint8Array
+    const iv = new Uint8Array(encryptedFile.iv.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+
+    // Генерация хеша SHA-256 из пароля для получения ключа
+    const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(password));
+    const keyBuffer = hashBuffer.slice(0, 32); // Обрезаем до 256 бит
+
+    // Импорт ключа для AES-GCM
+    const key = await crypto.subtle.importKey(
+        "raw",
+        keyBuffer,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["decrypt"]
+    );
+
+    // Расшифровка данных
+    try {
+        const decryptedData = await crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: iv },
+            key,
+            encryptedFile.encryptedData
+        );
+        return JSON.parse(decoder.decode(decryptedData)); // Возвращаем расшифрованные данные как строку
+    } catch (e) {
+        console.error("Decryption failed:", e);
+        return null; // В случае ошибки возвращаем null
+    }
 }

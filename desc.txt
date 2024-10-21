@@ -1,0 +1,122 @@
+liberary description
+ulda0 - algorythm name*
+0aam - inner project name*
+
+..................................Files tructure..................................
+
+MasterFile: {
+    signatures:{
+        1:"base64", ... 
+    },
+    files: {
+        id:{
+            index: location,
+            key: encryption key for the files,
+            descryption: optional (might be used for nameing)
+        }, ...
+    }
+}
+
+ContentFile: {
+    sygnatures: {
+        1: base64, ...
+    },
+    content: {
+        // file content
+        header: text,
+        // something else
+        file: ...
+    }
+}
+
+
+..................................Once class is created..................................
+ - [ ] connect to server (socketIO)
+ - [ ] pulse (use ping-pong connection every 1-3 sec to keep connection alive)
+Optiocal - directly download MasterFile*
+Optiocal - use different encryption liberaries*
+
+..................................Delivery protocol..................................
+File up/download must be created as a function (in order to create socketio or https or ssh* conntion)
+
+..................................How it might work..................................
+const u = ulda0(args*)
+
+u.RegisterMaster(password_for_the_cabinet).*then((responce) =>
+    {
+        id: id as file location (mandatory, optionaly by value like email*)
+        res:{
+            status:true/false,
+            error:null*
+        },
+        file: newborn file* (save to local value directly)
+    }
+)
+
+u.GetFile(FileID*, Password).*then(() => {
+    file: file content itself,
+    res:{
+        status:true/false,
+        error:null*
+    }
+    // set u.Master : file content list
+    // also loads all content files**
+})
+
+u.Master (as a valriable) => MasterFile.files
+**if it is possible to make a job to look up for an update, if possible
+
+u.connect.FileIndex : {file content}
+
+u.CreateContent(json_content).then(() =>{
+    index: fileIndex,
+    res:{
+        status:true/false,
+        error:null*
+    }
+})
+
+u.updateContent(index, json_content_new).then(() => {
+    res:{
+        status:true/false,
+        error:null*
+    }
+    //update all u.connect
+})
+As an idea *update json directly*
+
+u.DeleteContent(index).then(() => {
+    res:{
+        status:true/false,
+        error:null*
+    }
+    //update MasterFile
+})
+
+u.die().then => delete connetion and local files
+
+..................................aditional methods*..................................
+u.pulse(latency => {}) // test latency if the server is reachable ...
+
+............from My file............
+**may be to make some of the unreachable
+
+generateSignatures(signatureCount) !!!  // generates signatues by count of signatureCount
+createMasterFileSignatures()       !!!  // just creates all the signatures
+StepUpSignaturesUpdate()           !!!  // makes update of n+1 istteration
+generateLinkedHashes(line)  TODO    !   // generates 5 hashed line of signatures
+hashSHA256(data)                    ?   // currently used for hashSHA256
+validateHashChain(oldHashes, newHashes) // validate is the signatures inherits the line
+                                        // works only at n => n+1, needs to be changed
+encryptFile(MasterFile, password, salt*/, iv*/, iterations*/, pbkdf2Salt*/)     !!!
+                                        // encryptor for MasterFile
+decryptFile(MasterFileEncrypted, password)                                      !!!    
+                                        // decryptor for MasterFile
+encryptContentFile(fileData, password, iv*/)                                    !!!
+                                        // encryptor for ContentFile
+decryptContentFile(encryptedFile, password)                                     !!!
+                                        // decryptor for ContentFile
+
+
+
+..................................Inside functions..................................
