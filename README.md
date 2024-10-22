@@ -1,4 +1,3 @@
-
 # Project 0aam
 #### algorythm name ulda0
 
@@ -159,3 +158,33 @@ u.MasterPassChange(old_password,new_password).*then((responce) =>
 
 ## Aditional Methods
 > the needed to be updated  
+
+#### Make Ping-Pong  
+>To keep connection alive
+>> if needed and make sence
+```js
+u.pulse(latency => {})
+```
+
+
+## Cryptography methods 
+> They need to be changed ...
+
+```js
+generateSignatures(signatureCount)      // generates signatues by count of signatureCount
+createMasterFileSignatures()            // just creates all the signatures
+StepUpSignaturesUpdate()                // makes update of n+1 istteration
+generateLinkedHashes(line)  TODO        // generates 5 hashed line of signatures
+hashSHA256(data)                        // currently used for hashSHA256
+validateHashChain(oldHashes, newHashes) // validate is the signatures inherits the line
+                                        // works only at n => n+1, needs to be changed
+encryptFile(MasterFile, password, salt, iv, iterations, pbkdf2Salt)
+                                        // encryptor for MasterFile
+decryptFile(MasterFileEncrypted, password)
+                                        // decryptor for MasterFile
+encryptContentFile(fileData, password, iv)
+										// encryptor for ContentFile
+decryptContentFile(encryptedFile, password)
+                                        // decryptor for ContentFile
+
+```
