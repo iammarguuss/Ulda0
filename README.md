@@ -188,3 +188,33 @@ decryptContentFile(encryptedFile, password)
                                         // decryptor for ContentFile
 
 ```
+  
+### TODO refactor functions
+$$generateSignatures()$$
+$$createMasterFileSignatures()$$
+$$StepUpSignaturesUpdate()$$
+  
+
+## Pseudo code solutions
+
+```js
+u.RegisterMaster(password_for_the_cabinet).then((responce) =>{
+	>Create json structure
+	>call and save createMasterFileSignatures()
+	>sign file via generateLinkedHashes(line)
+		**if !id (from settings) => id=hash(password)
+	>Ecnrypt file via encryptFile(args)
+	>Send to server
+	>server side {
+		>Save file and singed_line to DB
+		>get id from DB
+		>return status and id
+	}
+	>return{
+		status,
+		ID,
+		file itself to local constant	
+	}
+
+}) 
+```
