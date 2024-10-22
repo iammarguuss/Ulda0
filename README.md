@@ -5,7 +5,7 @@
 
 MasterFile structre 
 > Main file to gide through 
-``` json
+``` js
 MasterFile: {
     signatures:{
         1:"base64", ... 
@@ -22,7 +22,7 @@ MasterFile: {
 
 ContentFile structre
 > guided file with users content
-``` json
+``` js
 ContentFile: {
     sygnatures: {
         1: base64, ...
