@@ -197,24 +197,71 @@ $$StepUpSignaturesUpdate()$$
 
 ## Pseudo code solutions
 
-```js
-u.RegisterMaster(password_for_the_cabinet).then((responce) =>{
-	>Create json structure
-	>call and save createMasterFileSignatures()
-	>sign file via generateLinkedHashes(line)
-		**if !id (from settings) => id=hash(password)
-	>Ecnrypt file via encryptFile(args)
-	>Send to server
-	>server side {
-		>Save file and singed_line to DB
-		>get id from DB
-		>return status and id
-	}
-	>return{
-		status,
-		ID,
-		file itself to local constant	
-	}
-
-}) 
+### DB structure
+> Every ptoject supposed to have its own db for easyer managemnt 
+#### MasterFile DB
+```json
+Master{
+	Id: number // primary key
+	iUserID: number, //use to identyfy the users
+	niUserID: text, //optinal, unique, indexed
+	Chain: json, //holdes public last keychain
+	File: bytes, //Holds file data
+	CreationTime: time,
+	LastRequested: time,
+	LastModifeid: time
+}
 ```
+
+### ContentFile DB
+```json
+Content{
+	id: number //primary key
+	Chain: json, //holdes public last keychain
+	File: bytes, //Holds file data
+	CreationTime: time,
+	LastRequested: time,
+	LastModifeid: time
+}
+```
+
+### Connection even
+What should be assambled in case user connects to us
+```js
+const u = ulda0(api_key);
+```
+
+```js
+Connect Event
+>	Check if server is up
+>	Send API key and test if it works
+>	Connect to socket.io
+>	Start pulse()
+>		if(Password and ID is in args) => launch u.Get();
+>	Return {status:true,}
+```
+
+
+### RegisterMaster
+> It helps to register 
+```js
+u.RegisterMaster(password_for_the_cabinet,*args).then((responce) =>{
+    >Create json structure
+    >call and save createMasterFileSignatures()
+    >sign file via generateLinkedHashes(line)
+        **if !id (from settings) => id=hash(password)
+    >Ecnrypt file via encryptFile(args)
+    >Send to server
+    >server side {
+        >Save file and singed_line to DB
+        >get id from DB
+        >return status and id
+    }
+    >return{
+        status,
+        ID,
+        file itself to local constant  
+    }
+})
+```
+
