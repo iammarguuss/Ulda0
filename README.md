@@ -1,10 +1,10 @@
-# Project 0aam
+# Project 0am
 #### algorythm name ulda0
 ## Files tructure
 MasterFile structre
 > Main file to gide through
-``` json
-MasterFile: {
+``` js
+MasterFile = {
     signatures:{
         1:"base64", ...
     },
@@ -20,8 +20,8 @@ MasterFile: {
 
 ContentFile structre
 > guided file with users content
-``` json
-ContentFile: {
+``` js
+ContentFile = {
     sygnatures: {
         1: base64, ...
     },
@@ -93,7 +93,7 @@ u.Master (as a valriable) => MasterFile.files
 #### Forced sycronisation
 > Make shure that file is updated
 ```js
-u.connect.FileIndex : {file content}
+u.check.FileIndex => {file content}
 ```
 
 #### Add content file
@@ -184,7 +184,7 @@ decryptContentFile(encryptedFile, password)
                                         // decryptor for ContentFile
 ```
 
-  ### TODO refactor functions
+### TODO refactor functions
 generateSignatures()
 createMasterFileSignatures()
 StepUpSignaturesUpdate()
@@ -238,7 +238,7 @@ Connect Event
 ### RegisterMaster
 > It helps to register 
 ```js
-u.RegisterMaster(password_for_the_cabinet,*args).then((responce) =>{
+function u.RegisterMaster(password_for_the_cabinet,*args) =>{
     >Create json structure
     >call and save createMasterFileSignatures()
     >sign file via generateLinkedHashes(line)
@@ -260,9 +260,8 @@ u.RegisterMaster(password_for_the_cabinet,*args).then((responce) =>{
 
 ### Request Master File
 > Request Master File
-
 ```js
-u.Get(FileID*, Password, *args).*then(() => {
+function u.Get(FileID*, Password, *args) => {
 	>Create package and send to the server
 	?Server side{
 	>	*check access tocken*
@@ -286,7 +285,7 @@ u.Get(FileID*, Password, *args).*then(() => {
 ### Update Content File
 > in case content file needs to be updated
 ```js
-u.updateContent(index, json_content_new).then(() => {
+function u.updateContent(index, json_content_new) => {
 	?Check the change should be made
 	>Create file(assabmle the file to make)
 	>Encrypt file
@@ -302,4 +301,119 @@ u.updateContent(index, json_content_new).then(() => {
 	>end up with responce
 	>return responce status
 })
+```
+
+### Force to be syncronized
+> Check all files and update all requred once
+``` js
+u.check.FileIndex {
+	>Downlaod all Content files  
+	For(All contentFiles){
+		>compare files
+		>update if difference accrue
+	}
+	return status
+}
+```
+
+### Create new ContentFile
+> Add new ContentFile and update MasterFile
+```js
+function u.CreateContent(json_content){
+	>Create json structure
+    >call and save createMasterFileSignatures() // signaturing proccess is the same
+    >sign file via generateLinkedHashes(line) // signaturing proccess is the same
+    >Ecnrypt file via encryptFile(args)
+    >Send to server
+    >server side {
+        >Save file and singed_line to DB
+        >get id from DB
+        >return status and id
+    }
+    >UpdateMasterFile*()
+    >return{
+        status,
+        ID,
+        file itself to local constant  
+    }
+}
+```
+
+### Update Master File
+> in case content file needs to be updated
+```js
+function u.UpdateMasterFile(index, json_content_new) => {
+	?Check the change should be made
+	>Create file(assabmle the file to make)
+	>Encrypt file
+	>Sign the file
+	>Assamble package 
+	>Send file 
+		?Server side{
+	>		*check access tocken*
+	>		Check file by id
+	>		update time in sql
+	>		send status to client
+		}
+	>end up with responce
+	>return responce status
+})
+```
+
+### Delete File 
+> in case content file needs to be updated
+```js
+u.MasterFileDelete(password_confimation){
+	>	if(it has content files){ //by argument if net required
+	>		For(all content files){
+	>			u.ContentFileDelete()
+	>		}
+	>	}
+	>Send reuest and signature
+	>Server side {
+	>	Delete from DB
+	>	send back request
+	>}
+	return status
+}
+
+u.ContentFileDelete(password_confimation_from_masterFile){
+	>Send reuest and signature
+	>Server side {
+	>	Delete from DB
+	>	send back request
+	>}
+	return status
+}
+```
+
+### Seemless approach
+> User can operate our files as a symple json object when magic happends on the back
+```js
+Update logic{ 
+//reference logic 
+// [Отслеживание изменений в JSON (chatgpt.com)](https://chatgpt.com/c/671620f0-bf8c-8001-a5db-b1ace173db64)
+>Check what object has been changed
+>u.updateContent(index, json_content_new)
+// should not be THAT hard
+}
+```
+
+## How it should work
+> Just a symple example how it should work
+```js
+const u = u.ulda0(api_key); //connect
+
+u.Get(FileID*, Password, *args) // load and decrypt all files
+
+u.files.[fileName].name = "Mark" // update file with obj.name at 'fileName' and it should sync automatically 
+
+```
+### or
+```js
+const u = u.ulda0(api_key); //connect
+
+u.RegisterMaster(password_for_the_cabinet)
+
+u.files.[fileName].name = "Mark" // update file with obj.name at 'fileName' and it should sync automatically 
 ```
