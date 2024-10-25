@@ -265,3 +265,48 @@ async function decryptContentFile(encryptedFile, password) {
         return null; // В случае ошибки возвращаем null
     }
 }
+
+
+//Проверка пароля
+async function passcheck(password) {
+    // Переводим пароль в Uint8Array
+    const encoder = new TextEncoder();
+    const passwordBuffer = encoder.encode(password);
+
+    // Генерация соли
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+
+    // Создаем PBKDF2-хэш с использованием SHA-256
+    const keyMaterial = await crypto.subtle.importKey("raw", passwordBuffer, "PBKDF2", false, ["deriveBits"]);
+    const saltypass = await crypto.subtle.deriveBits({
+        name: "PBKDF2",
+        salt: salt,
+        iterations: 1000,
+        hash: "SHA-256"
+    }, keyMaterial, 256); // Получаем 256 бит
+
+    // Переводим результат в hex-строку
+    const saltypassHex = Array.from(new Uint8Array(saltypass)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    // Расчет энтропии (простейшая имитация)
+    let entropy = password.length * 6; // Предположим, что каждый символ добавляет 6 бит энтропии
+
+    // Хэширование оригинального пароля с использованием SHA-512
+    const idBuffer = await crypto.subtle.digest("SHA-512", passwordBuffer);
+    const idHex = Array.from(new Uint8Array(idBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const id = idHex.substring(0, 16); // Первые 16 символов
+
+    // Хэширование saltypass с использованием SHA-512
+    const skeyBuffer = await crypto.subtle.digest("SHA-512", new Uint8Array(saltypass));
+    const skeyHex = Array.from(new Uint8Array(skeyBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const skey = skeyHex.substring(0, 16); // Первые 16 символов
+
+    return {
+        Entropy: entropy,
+        idLess: entropy > 200,
+        saltypass: saltypassHex,
+        salt: Array.from(salt).map(b => b.toString(16).padStart(2, '0')).join(''),
+        id: id,
+        skey: skey
+    };
+}

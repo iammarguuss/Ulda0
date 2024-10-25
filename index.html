@@ -63,7 +63,10 @@
 
             const decryptedContentData = await decryptContentFile(encryptedContentFile, "Password");
             console.log("Decrypted Data:", decryptedContentData);
-            
+           
+            // Пример использования функции
+            passcheck("examplepassword").then(console.log);
+
         });
     </script>
     
