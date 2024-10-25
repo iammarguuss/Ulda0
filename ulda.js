@@ -281,7 +281,7 @@ async function passcheck(password) {
     const saltypass = await crypto.subtle.deriveBits({
         name: "PBKDF2",
         salt: salt,
-        iterations: 1000,
+        iterations: 100000,
         hash: "SHA-256"
     }, keyMaterial, 256); // Получаем 256 бит
 
