@@ -417,3 +417,4 @@ u.RegisterMaster(password_for_the_cabinet)
 
 u.files.[fileName].name = "Mark" // update file with obj.name at 'fileName' and it should sync automatically 
 ```
+
