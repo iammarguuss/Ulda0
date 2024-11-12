@@ -33,20 +33,45 @@ async function StepUpSignaturesUpdate() {
 //    console.log('Updated MasterFile with stepped up signatures:', MasterFile);
 }
 
-async function generateLinkedHashes(line) {
-    let newLine = {...line}; // Создаем копию объекта для безопасной модификации
-    const firstKey = parseInt(Object.keys(newLine)[0]);
-    const lastKey = firstKey + 6;
+//=====================================OLD BUT WORKING OPTION=================================
+// async function generateLinkedHashes(line) {
+//     let newLine = {...line}; // Создаем копию объекта для безопасной модификации
+//     const firstKey = parseInt(Object.keys(newLine)[0]);
+//     const lastKey = firstKey + 6;
 
-    for (let i = firstKey; i <= lastKey; i++) {
-        if (newLine[i] !== undefined) { // Убедимся, что ключ существует перед хешированием
-            for (let j = firstKey + 1; j <= i; j++) {
-                newLine[i] = await hashSHA256(newLine[i]);  // Применяем хеширование
-            }
+//     for (let i = firstKey; i <= lastKey; i++) {
+//         if (newLine[i] !== undefined) { // Убедимся, что ключ существует перед хешированием
+//             for (let j = firstKey + 1; j <= i; j++) {
+//                 newLine[i] = await hashSHA256(newLine[i]);  // Применяем хеширование
+//             }
+//         }
+//     }
+
+//     return newLine;
+// }
+
+async function generateLinkedHashes(line,start = null,end = null) {
+    if(!start){
+        start = Math.min(...Object.keys(line))
+    }
+    if(!end){
+        end = start + 5
+    }
+    const depth = end-start+1
+    let chain = {}
+    chain[0] = {...line};
+    for (let d = 1; d < depth; d++) {
+        chain[d] = {}
+        for (let n = d+start; n <= end; n++) {
+            //chain[d][n] = sha(chain[d-1][n-1]+chain[d-1][n])
+            chain[d][n] = await hashSHA256(chain[d-1][n-1]+chain[d-1][n])
         }
     }
-
-    return newLine;
+    let after = {}
+    for (let i = 0; i < depth; i++) {
+        after[start+i] = chain[i][Math.min(...Object.keys(chain[i]))]
+    }
+    return after;
 }
 
 async function hashSHA256(data) {
@@ -63,36 +88,61 @@ async function hashSHA256(data) {
 ////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////
-async function validateHashChain(oldHashes, newHashes) {
-    const oldKeys = Object.keys(oldHashes).map(Number).sort((a, b) => a - b);
-    const newKeys = Object.keys(newHashes).map(Number).sort((a, b) => a - b);
+// async function validateHashChain(oldHashes, newHashes) {
+//     const oldKeys = Object.keys(oldHashes).map(Number).sort((a, b) => a - b);
+//     const newKeys = Object.keys(newHashes).map(Number).sort((a, b) => a - b);
 
-    if (oldKeys.length < 2 || newKeys.length < 2) {
-        console.log("Not enough hashes to validate.");
-        return false;
-    }
+//     if (oldKeys.length < 2 || newKeys.length < 2) {
+//         console.log("Not enough hashes to validate.");
+//         return false;
+//     }
 
+//     let allValid = true;
+//     for (let i = 1; i < oldKeys.length; i++) {  //TODO adjust here :)
+//         const oldKey = oldKeys[i];
+//         const newKey = newKeys[i - 1]; // Сравниваем старый хеш с хешем, сгенерированным из предыдущего нового хеша
+
+//         if (!oldHashes.hasOwnProperty(oldKey) || !newHashes.hasOwnProperty(newKey)) {
+//             console.log(`Missing hash for old key ${oldKey} or new key ${newKey}`);
+//             allValid = false;
+//             continue;
+//         }
+
+//         const expectedOldHash = oldHashes[oldKey];
+//         const previousNewHash = newHashes[newKey];
+
+//         // Генерация ожидаемого хеша из предыдущего нового хеша
+//         const calculatedHash = await hashSHA256(previousNewHash);
+
+//         if (calculatedHash !== expectedOldHash) {
+//             console.log(`Mismatch at key ${oldKey}: expected ${expectedOldHash}, got ${calculatedHash}`);
+//             allValid = false;
+//         }
+//     }
+
+//     if (allValid) {
+//         console.log("Validation successful: All hashes in oldHashes are valid successors of newHashes.");
+//     } else {
+//         console.log("Validation failed: Some hashes in oldHashes are not valid successors.");
+//     }
+
+//     return allValid;
+// }
+
+async function validateHashChain(arg1,arg2,start1 = null,end1 = null) {
     let allValid = true;
-    for (let i = 1; i < oldKeys.length; i++) {  //TODO adjust here :)
-        const oldKey = oldKeys[i];
-        const newKey = newKeys[i - 1]; // Сравниваем старый хеш с хешем, сгенерированным из предыдущего нового хеша
+    if(!start1){start1 = Math.min(...Object.keys(arg1))}
+    if(!end1){end1 = start1 + 4}
 
-        if (!oldHashes.hasOwnProperty(oldKey) || !newHashes.hasOwnProperty(newKey)) {
-            console.log(`Missing hash for old key ${oldKey} or new key ${newKey}`);
-            allValid = false;
-            continue;
+    // const leverage = end1-start1;
+    for (let i = start1; i < end1; i++) {
+        let a = arg1[i+1]
+        let b = await hashSHA256(arg1[i]+arg2[i+1])   
+        
+        if(a !== b){allValid = false
+            // console.log("AAAAAAAA ", a, b)
         }
-
-        const expectedOldHash = oldHashes[oldKey];
-        const previousNewHash = newHashes[newKey];
-
-        // Генерация ожидаемого хеша из предыдущего нового хеша
-        const calculatedHash = await hashSHA256(previousNewHash);
-
-        if (calculatedHash !== expectedOldHash) {
-            console.log(`Mismatch at key ${oldKey}: expected ${expectedOldHash}, got ${calculatedHash}`);
-            allValid = false;
-        }
+        // console.log("AAAAAAAA AT " + i + " ", a, b)
     }
 
     if (allValid) {
