@@ -193,7 +193,7 @@ StepUpSignaturesUpdate()
 ### DB structure
 > Every ptoject supposed to have its own db for easyer managemnt 
 #### MasterFile DB
-```json
+```js
 Master{
 	Id: number // primary key
 	iUserID: number, //use to identyfy the users
@@ -207,7 +207,7 @@ Master{
 ```
 
 ### ContentFile DB
-```json
+```js
 Content{
 	id: number //primary key
 	Chain: json, //holdes public last keychain
