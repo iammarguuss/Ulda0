@@ -1,0 +1,15 @@
+{
+  "name": "fileserver",
+  "version": "1.0.0",
+  "description": "Just a little project to make sure that we can work with files now",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "iammarguuss",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.21.1",
+    "socket.io": "^4.8.1"
+  }
+}
