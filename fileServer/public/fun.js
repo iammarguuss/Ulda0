@@ -56,12 +56,30 @@ class FileProcessor {
         const fileMeta = this.SendFileProcessing.GetMeta(file)
         console.log(fileMeta)
 
+        // check max file size
         if(this.config.MAX_FILE_SIZE < fileMeta.Meta.size){
             return {status:false,message:"File is just too big :("}
         }
 
-        const chunks = this.SendFileProcessing.fileSplitter(file);
+        // cutting chunks
+        let chunks = await this.SendFileProcessing.fileSplitter(file);
         console.log("Chanks are splitted in ",chunks)
+
+        // signing via crc32
+        //chunks = await this.SendFileProcessing.OriginSigning(chunks)
+        await this.SendFileProcessing.OriginSigning(chunks)
+        console.log(chunks)
+
+        // generating keis and ivs
+        await this.SendFileProcessing.generateKeysAndIVs(chunks);
+        console.log(chunks)
+
+        // encrypting chanks
+        await this.SendFileProcessing.encryptChunks(chunks);
+        console.log(chunks)
+
+
+
 
 
         //return try_connect;
@@ -77,6 +95,56 @@ class FileProcessor {
             const hashArray = Array.from(new Uint8Array(hashBuffer));
             const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
             return hashHex;
+        },
+        CRC32: (str) => {
+            const makeCRCTable = () => {
+                let c;
+                const crcTable = [];
+                for (let n = 0; n < 256; n++) {
+                    c = n;
+                    for (let k = 0; k < 8; k++) {
+                        c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
+                    }
+                    crcTable[n] = c;
+                }
+                return crcTable;
+            };
+
+            const crcTable = this.crcTable || (this.crcTable = makeCRCTable());
+            let crc = 0 ^ (-1);
+
+            for (let i = 0; i < str.length; i++) {
+                const byte = str.charCodeAt(i);
+                crc = (crc >>> 8) ^ crcTable[(crc ^ byte) & 0xFF];
+            }
+
+            return (crc ^ (-1)) >>> 0; // Return as unsigned integer
+        },
+        aesEncrypt: async (data, key, iv) => {
+            const algo = {
+                name: "AES-CBC",
+                iv: iv
+            };
+            return crypto.subtle.encrypt(algo, key, data);
+        },
+        importKey: async (base64Key, algo) => {
+            const rawKey = this.localCrypto.base64ToArrayBuffer(base64Key);
+            return crypto.subtle.importKey(
+                "raw",
+                rawKey,
+                algo,
+                false,
+                ["encrypt"]
+            );
+        },
+        base64ToArrayBuffer: (base64) => {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
         }
     };
 
@@ -116,7 +184,7 @@ class FileProcessor {
                 Meta: basicMeta
             };
         },
-        fileSplitter: (file) => {
+        fileSplitter: async (file) => {
             const CHUNK_SIZE = 256 * 1024; // 256 КБ в байтах
             let chunks = {};
             let currentChunk = 1;
@@ -124,23 +192,63 @@ class FileProcessor {
             for (let start = 0; start < file.size; start += CHUNK_SIZE) {
                 const end = Math.min(start + CHUNK_SIZE, file.size);
                 const blob = file.slice(start, end); // Получаем часть файла как Blob
-                const reader = new FileReader();
-                // Это асинхронная операция, поэтому используем Promise для обработки
-                const promise = new Promise((resolve) => {
+                // Асинхронно читаем блоб и ждем его загрузки перед продолжением
+                await new Promise((resolve) => {
+                    const reader = new FileReader();
                     reader.onload = function() {
                         // Сохраняем содержимое чанка в виде байтового массива
                         chunks[currentChunk] = new Uint8Array(this.result);
+                        currentChunk++;
                         resolve();
                     };
                     reader.readAsArrayBuffer(blob);
                 });
-                // Дожидаемся завершения чтения данного чанка перед переходом к следующему
-                promise.then(() => {
-                    currentChunk++;
-                });
             }
             return chunks; // Возвращаем объект с чанками
+        },
+        OriginSigning: async (chunks) => {
+            // Проверка наличия контейнера для подписей
+            if (!chunks[0]) {chunks[0] = { origins: {} };}
+            // Подписываем каждый чанк
+            for (const chunkNumber in chunks) {
+                if (chunkNumber === "0") continue; // Пропускаем контейнер для подписей
+                const chunk = chunks[chunkNumber];
+                const signature = this.localCrypto.CRC32(chunk.toString());
+                chunks[0].origins[chunkNumber] = signature;
+            }
+            return chunks;
+        },
+        generateKeysAndIVs: async (chunks) => {
+        chunks[0].keys = {};
+
+        for (const chunkNumber in chunks) {
+            if (chunkNumber === "0") continue; // Пропускаем специальный контейнер для ключей и IVs
+            // Генерируем случайный ключ и IV для AES-256
+            const keyBuffer = crypto.getRandomValues(new Uint8Array(32)); // AES-256 требует ключ длиной 256 бит (32 байта)
+            const ivBuffer = crypto.getRandomValues(new Uint8Array(16)); // AES блок 128 бит (16 байт)
+            // Сохраняем ключ и IV в специальном контейнере
+            chunks[0].keys[chunkNumber] = {
+                key: btoa(String.fromCharCode.apply(null, keyBuffer)), // Конвертируем Uint8Array в строку, потом в Base64
+                iv: btoa(String.fromCharCode.apply(null, ivBuffer))
+            };
         }
+        },
+        encryptChunks: async (chunks) => {
+            const algo = {name: "AES-CBC",length: 256};
+
+            for (let chunkNumber = 1; chunkNumber < Object.keys(chunks).length; chunkNumber++) {
+                const chunk = chunks[chunkNumber];
+                const keyData = chunks[0].keys[chunkNumber];
+                const key = await this.localCrypto.importKey(keyData.key, algo);
+                const iv = this.localCrypto.base64ToArrayBuffer(keyData.iv);
+
+                const encryptedChunk = await this.localCrypto.aesEncrypt(chunk,key,iv);
+                // Заменяем оригинальный чанк его зашифрованной версией
+                chunks[chunkNumber] = new Uint8Array(encryptedChunk);
+            }
+        }
+
+    
     
     };
 
