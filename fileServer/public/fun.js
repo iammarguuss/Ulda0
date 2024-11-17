@@ -78,7 +78,7 @@ class FileProcessor {
         await this.SendFileProcessing.encryptChunks(chunks);
         console.log(chunks)
 
-
+        //encrypt 1st chank and signature crc32 => start sending proccess  =)
 
 
 
