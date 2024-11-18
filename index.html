@@ -65,8 +65,16 @@
             console.log("Decrypted Data:", decryptedContentData);
            
             // Пример использования функции
-            passcheck("examplepassword").then(console.log);
+            //passcheck("examplepassword").then(console.log);
 
+            const SuperPassword = await GenerateNewPassForContentFile();
+            console.log("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nTHis is the password" , SuperPassword)
+
+            const SuperContent = await newEncContentFile({Json:"Useless json, we say"}, SuperPassword)
+            console.log("Super encrypted file: ",SuperContent)
+
+            const SuperDecryptedContent = await newDecContentFile(SuperContent, SuperPassword)
+            console.log("Super decrypted file: ", SuperDecryptedContent)
         });
     </script>
     

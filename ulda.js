@@ -140,9 +140,9 @@ async function validateHashChain(arg1,arg2,start1 = null,end1 = null) {
         let b = await hashSHA256(arg1[i]+arg2[i+1])   
         
         if(a !== b){allValid = false
-            // console.log("AAAAAAAA ", a, b)
+             console.log("bbbbbbbbbbbbbb ", a, b)
         }
-        // console.log("AAAAAAAA AT " + i + " ", a, b)
+         console.log("AAAAAAAA AT " + i + " ", a, b)
     }
 
     if (allValid) {
@@ -359,4 +359,170 @@ async function passcheck(password) {
         id: id,
         skey: skey
     };
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//////////////////////////////////New encryption methods//////////////////////////////////
+async function GenerateNewPassForContentFile() {
+    const arrayBufferToBase64 = (buffer) => {
+        return btoa(String.fromCharCode.apply(null, new Uint8Array(buffer)));
+      };
+    
+      const arrayBufferToHex = (buffer) => {
+        return Array.from(new Uint8Array(buffer))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+      };
+    
+      // Генерация пароля
+      const passwordBuffer = crypto.getRandomValues(new Uint8Array(32)); // 24 байта = 32 символа в base64
+      const password = arrayBufferToBase64(passwordBuffer);
+    
+      // Генерация IV
+      const ivBuffer = crypto.getRandomValues(new Uint8Array(16)); // 12 байт для IV
+      const iv = arrayBufferToHex(ivBuffer);
+    
+      // Генерация соли
+      const saltBuffer = crypto.getRandomValues(new Uint8Array(32)); // 24 байта = 32 символа в base64
+      const salt = arrayBufferToBase64(saltBuffer);
+    
+      return {
+        password,
+        iv,
+        salt
+      };
+       
+}
+
+async function newEncContentFile(file,passwordSettings) {
+    const { password, iv, salt } = passwordSettings;
+
+    const encoder = new TextEncoder();
+    const data = encoder.encode(JSON.stringify(file));
+  
+    // Генерация случайных байтов (32 байта)
+    const randomBytes = crypto.getRandomValues(new Uint8Array(32));
+    
+    // Создание нового массива для данных с дополнительными байтами
+    const newData = new Uint8Array(randomBytes.length + data.length);
+    newData.set(randomBytes, 0);
+    newData.set(data, randomBytes.length);
+  
+    // Создание соли в виде байтового массива для XOR операции
+    const saltBytes = encoder.encode(salt);
+    const saltedData = new Uint8Array(newData.length);
+  
+    // Применение XOR между каждым байтом новых данных и солью
+    for (let i = 0; i < newData.length; i++) {
+      saltedData[i] = newData[i] ^ saltBytes[i % saltBytes.length];
+    }
+  
+    // Преобразование пароля в ключ (обеспечение нужной длины 256 бит)
+    const passwordBytes = encoder.encode(password).slice(0, 32);
+    const key = await crypto.subtle.importKey(
+      "raw",
+      passwordBytes, // Теперь пароль точно 256 бит
+      { name: "AES-CBC" },
+      false,
+      ["encrypt"]
+    );
+  
+    const ivArray = new Uint8Array(iv.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+  
+    // Шифрование солёных данных
+    const encryptedData = await crypto.subtle.encrypt(
+      {
+        name: "AES-CBC",
+        iv: ivArray
+      },
+      key,
+      saltedData
+    );
+  
+    return new Uint8Array(encryptedData);
+}
+
+async function newDecContentFile(encryptedData, passwordSettings) {
+    const { password, iv, salt } = passwordSettings;
+
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+  
+    // Преобразование пароля в ключ (обеспечение нужной длины 256 бит)
+    const passwordBytes = encoder.encode(password).slice(0, 32);
+    const key = await crypto.subtle.importKey(
+      "raw",
+      passwordBytes, // Теперь пароль точно 256 бит
+      { name: "AES-CBC" },
+      false,
+      ["decrypt"]
+    );
+  
+    const ivArray = new Uint8Array(iv.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+  
+    // Расшифровка данных
+    const decryptedData = await crypto.subtle.decrypt(
+      {
+        name: "AES-CBC",
+        iv: ivArray
+      },
+      key,
+      encryptedData
+    );
+  
+    const decryptedBytes = new Uint8Array(decryptedData);
+    const saltBytes = encoder.encode(salt);
+    const saltedData = new Uint8Array(decryptedBytes.length);
+  
+    // Применение операции XOR к расшифрованным данным
+    for (let i = 0; i < decryptedBytes.length; i++) {
+      saltedData[i] = decryptedBytes[i] ^ saltBytes[i % saltBytes.length];
+    }
+  
+    // Удаление 32 случайных байт из начала данных после XOR
+    const originalData = saltedData.slice(32);
+  
+    // Преобразование данных обратно в строку
+    const jsonString = decoder.decode(originalData);
+  
+    try {
+      return JSON.parse(jsonString);
+    } catch (error) {
+      console.error("Failed to parse JSON:", jsonString);
+      throw error; // Переброс ошибки дальше
+    }
 }
