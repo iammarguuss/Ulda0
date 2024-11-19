@@ -8,7 +8,7 @@ class FileProcessor {
         });
     }
 
-    async sendFile(file, key) {
+    async sendFile(file, key, passworgConfig) {
         const starting = await this.SendFileProcessing.SaltSplitter(key);
         console.log('Starting data:', starting);
     
@@ -79,8 +79,11 @@ class FileProcessor {
         console.log(chunks)
 
         //encrypt 1st chank and signature crc32 => start sending proccess  =)
+        chunks[0] = await this.localCrypto.newEncContentFile(chunks[0],passworgConfig)
+        console.log(chunks[0])
 
-
+        const proofer = await this.SendFileProcessing.saveChunkMetadata(chunks)
+        console.log(proofer)
 
         //return try_connect;
     }
@@ -145,6 +148,77 @@ class FileProcessor {
                 bytes[i] = binaryString.charCodeAt(i);
             }
             return bytes.buffer;
+        },
+        newEncContentFile: async (file,passwordSettings) => {    // get from ulda0
+            const { password, iv, salt } = passwordSettings;
+        
+            const encoder = new TextEncoder();
+            const data = encoder.encode(JSON.stringify(file));
+          
+            // Генерация случайных байтов (32 байта)
+            const randomBytes = crypto.getRandomValues(new Uint8Array(32));
+            
+            // Создание нового массива для данных с дополнительными байтами
+            const newData = new Uint8Array(randomBytes.length + data.length);
+            newData.set(randomBytes, 0);
+            newData.set(data, randomBytes.length);
+          
+            // Создание соли в виде байтового массива для XOR операции
+            const saltBytes = encoder.encode(salt);
+            const saltedData = new Uint8Array(newData.length);
+          
+            // Применение XOR между каждым байтом новых данных и солью
+            for (let i = 0; i < newData.length; i++) {
+              saltedData[i] = newData[i] ^ saltBytes[i % saltBytes.length];
+            }
+          
+            // Преобразование пароля в ключ (обеспечение нужной длины 256 бит)
+            const passwordBytes = encoder.encode(password).slice(0, 32);
+            const key = await crypto.subtle.importKey(
+              "raw",
+              passwordBytes, // Теперь пароль точно 256 бит
+              { name: "AES-CBC" },
+              false,
+              ["encrypt"]
+            );
+          
+            const ivArray = new Uint8Array(iv.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+          
+            // Шифрование солёных данных
+            const encryptedData = await crypto.subtle.encrypt(
+              {
+                name: "AES-CBC",
+                iv: ivArray
+              },
+              key,
+              saltedData
+            );
+          
+            return new Uint8Array(encryptedData);
+        },
+        CRC32Byte: (data) => {
+            const makeCRCTable = () => {
+                let c;
+                const crcTable = new Array(256);
+                for (let n = 0; n < 256; n++) {
+                    c = n;
+                    for (let k = 0; k < 8; k++) {
+                        c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
+                    }
+                    crcTable[n] = c;
+                }
+                return crcTable;
+            };
+
+            const crcTable = this.crcTable || (this.crcTable = makeCRCTable());
+            let crc = 0 ^ (-1);
+
+            for (let i = 0; i < data.length; i++) {
+                const byte = data[i];
+                crc = (crc >>> 8) ^ crcTable[(crc ^ byte) & 0xFF];
+            }
+
+            return (crc ^ (-1)) >>> 0; // Return as unsigned integer
         }
     };
 
@@ -246,9 +320,21 @@ class FileProcessor {
                 // Заменяем оригинальный чанк его зашифрованной версией
                 chunks[chunkNumber] = new Uint8Array(encryptedChunk);
             }
-        }
+        },
+        saveChunkMetadata: (chunks) => {
+            const proofer = {};
+            for (let chunkNumber = 0; chunkNumber < Object.keys(chunks).length; chunkNumber++) {
+                const chunk = chunks[chunkNumber];
+                const crc32 = this.localCrypto.CRC32Byte(chunk);
+                const size = chunk.length;
 
-    
+                proofer[chunkNumber] = {
+                    crc32: crc32,
+                    size: size
+                };
+            }
+            return proofer;
+        },
     
     };
 
@@ -262,9 +348,21 @@ document.addEventListener('DOMContentLoaded', () => {
             serverHost: 'localhost',
             serverPort: 3000,
             MAX_FILE_SIZE: 52428800, //in bytes ))
+
+            //here is ths password for encryption
+            iv:"fe5dba3ee7832c899c6826955c1d7dd1",
+            password:"wzlxMsbekMOSXeFkFvnMdBbMpLKmHPz84XBk5TKyefk=",
+            salt:"GRIuiZTDHZAUfwSz+/fsZvPS8uYYmic48OO+fLmyltw="
         };
+
+
+        
         const processor = new FileProcessor(config);
-        const fileWasSent = await processor.sendFile(file,config.key);
+        const fileWasSent = await processor.sendFile(file,config.key,{iv:config.iv,password:config.password,salt:config.salt});
         console.log(fileWasSent)
     });
 });
+
+
+
+
