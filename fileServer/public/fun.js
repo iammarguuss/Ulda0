@@ -85,6 +85,27 @@ class FileProcessor {
         const proofer = await this.SendFileProcessing.saveChunkMetadata(chunks)
         console.log(proofer)
 
+        const signatures = await this.localCrypto.sendGetFunSignatures(Object.keys(chunks).length); // giving signatures array to proof the delivery
+        console.log(signatures);
+
+        const serverResponse = await this.SendFileProcessing.initSender(chunks, signatures, proofer);
+        console.log(serverResponse)
+        
+        if(!serverResponse.status){
+            return {status:false,message:"Server is down or the code shited itself"}
+        }
+
+        const SuperSender = await this.SendFileProcessing.FileTransfer(chunks,signatures)
+        console.log(SuperSender)
+
+        if(!SuperSender){
+            // kill connection 
+        }
+
+        //send responce that file is sent or not
+
+
+        
         //return try_connect;
     }
     
@@ -219,6 +240,26 @@ class FileProcessor {
             }
 
             return (crc ^ (-1)) >>> 0; // Return as unsigned integer
+        },
+        sendGetFunSignatures: async (chunkCount) => {
+            const signatures = {};
+            for (let level = 0; level < 6; level++) { // 5 итераций подписей
+                signatures[level] = {}; // Создаем новый объект для каждого уровня
+                for (let i = 0; i < chunkCount; i++) {
+                    if (level === 0) {
+                        // Для первого уровня генерируем случайные строки
+                        const randomString = crypto.getRandomValues(new Uint8Array(32));
+                        const string = btoa(String.fromCharCode.apply(null, randomString));
+                        signatures[level][i] = string;
+                    } else {
+                        // Для последующих уровней генерируем хеш от предыдущей подписи
+                        const previousSignature = signatures[level - 1][i];
+                        const hash = await this.localCrypto.Sha256(previousSignature);
+                        signatures[level][i] = hash;
+                    }
+                }
+            }
+            return signatures;
         }
     };
 
@@ -335,7 +376,87 @@ class FileProcessor {
             }
             return proofer;
         },
-    
+        initSender: async (chunks, signatures, proofer) => {
+            const initialData = {
+                proofer: proofer,
+                signatures: signatures[5], // пятая группа подписей
+                zeroChunk: chunks[0]
+            };
+
+            console.log('Sending initial data to server...');
+            this.socket.emit('startFileTransfer', initialData);
+
+            // Создаем промис, который будет ждать ответа сервера
+            return new Promise((resolve, reject) => {
+                this.socket.once('initialDataReceived', (response) => {
+                    resolve(response);
+                });
+
+                // Таймаут для ответа сервера
+                setTimeout(() => {
+                    resolve({ status: false, message: 'Server is down.' });
+                }, 5000); // 5 секунд ожидания ответа
+            });
+        },
+        FileTransfer: async (chunks, signatures) => {
+            const chunkNUmber = Object.keys(chunks).length;
+            const chank_success = {};
+            for (let i = 0; i < chunkNUmber; i++) {
+                this.socket.emit('Protocol', { chunk: chunks[i], sign: signatures[4][i], id: i, level: 4 });
+                chank_success[i] = this.SendFileProcessing.Revelidator(i,chunks,signatures);
+            }
+            // Преобразуем объект chank_success в массив промисов
+            const results = await Promise.all(Object.values(chank_success));
+            // Проверяем, что все результаты true
+            return results.every(value => value === true);
+        },
+        Revelidator: async (chankID,chunks,signatures) => {
+            return new Promise((resolve) => {
+                // Ожидаем ответ через сокет
+                this.socket.once('Chank' + chankID, async (response) => {
+
+                    let timeout; // Переменная для тайм-аута
+
+                    // Слушаем событие отключения сокета
+                    const handleDisconnect = () => {
+                        clearTimeout(timeout); // Убираем тайм-аут
+                        resolve(false); // Возвращаем false при отключении сокета
+                    };
+            
+                    this.socket.once('disconnect', handleDisconnect);
+            
+                    // Устанавливаем тайм-аут на случай, если сервер не ответит
+                    timeout = setTimeout(() => {
+                        this.socket.off('disconnect', handleDisconnect); // Убираем слушатель disconnect
+                        resolve(false); // Возвращаем false при тайм-ауте
+                    }, 10000); // 10 секунд на выполнение (можно изменить)
+
+                    console.log(response);
+                    // Если уровень достигает 0, возвращаем false
+                    if (response.level === 0) {
+                        resolve(false);
+                        return;
+                    }
+                    // Если статус false, отправляем запрос с уменьшением уровня
+                    if (!response.status) {
+                        this.socket.emit('Protocol', { 
+                            chunk: chunks[chankID], 
+                            sign: signatures[response.level - 1][chankID], 
+                            id: chankID, 
+                            level: response.level - 1 
+                        });
+                        // Вызываем функцию рекурсивно
+                        const result = await this.SendFileProcessing.Revelidator(chankID,chunks,signatures);
+                        resolve(result);
+                    } else {
+                        // Если статус true, возвращаем true
+                        resolve(true);
+                    }
+                });
+            });
+        }
+        
+        
     };
 
 }
@@ -350,6 +471,7 @@ document.addEventListener('DOMContentLoaded', () => {
             MAX_FILE_SIZE: 52428800, //in bytes ))
 
             //here is ths password for encryption
+            // this one is generated by Ulda0 generator, I hope
             iv:"fe5dba3ee7832c899c6826955c1d7dd1",
             password:"wzlxMsbekMOSXeFkFvnMdBbMpLKmHPz84XBk5TKyefk=",
             salt:"GRIuiZTDHZAUfwSz+/fsZvPS8uYYmic48OO+fLmyltw="
