@@ -98,10 +98,15 @@ class FileProcessor {
         const SuperSender = await this.SendFileProcessing.FileTransfer(chunks,signatures)
         console.log(SuperSender)
 
-        if(!SuperSender){
-            // kill connection 
-        }
+        const FinalReporter = await this.SendFileProcessing.FinalReporter(SuperSender)
+        //console.log(FinalReporter)
 
+        if(!SuperSender) { 
+            return {status:false,message:"File was not uploaded"}
+        }else{
+            return FinalReporter
+            
+        }
         //send responce that file is sent or not
 
 
@@ -429,7 +434,7 @@ class FileProcessor {
                     timeout = setTimeout(() => {
                         this.socket.off('disconnect', handleDisconnect); // Убираем слушатель disconnect
                         resolve(false); // Возвращаем false при тайм-ауте
-                    }, 10000); // 10 секунд на выполнение (можно изменить)
+                    }, 30000); // 30 секунд на выполнение (можно изменить)
 
                     console.log(response);
                     // Если уровень достигает 0, возвращаем false
@@ -454,7 +459,27 @@ class FileProcessor {
                     }
                 });
             });
+        },
+        FinalReporter: async (finalStatus) => {
+            return new Promise((resolve, reject) => {
+                const timeoutId = setTimeout(() => {
+                    console.log('Timeout waiting for final response from server');
+                    this.socket.off('finalResponse'); // Отменяем прослушивание события, так как время ожидания истекло
+                    reject(new Error('Timeout waiting for final response from server'));
+                }, 10000); // 10 секунд на получение ответа
+        
+                // Ожидаем ответа от сервера
+                this.socket.once('finalResponse', (response) => {
+                    //console.log('Received final response from server:', response);
+                    clearTimeout(timeoutId); // Отменяем таймер, так как получен ответ от сервера
+                    resolve(response);
+                });
+        
+                // Отправляем итоговый статус передачи файла на сервер
+                this.socket.emit('finalStatus', { status: finalStatus});
+            });
         }
+
         
         
     };
@@ -484,7 +509,3 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(fileWasSent)
     });
 });
-
-
-
-

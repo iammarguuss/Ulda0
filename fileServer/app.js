@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
+const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
@@ -41,6 +42,7 @@ io.on('connection', (socket) => {
         // drop connection if not passed the check
         if(!response.status){
             //socket.disconnect(true);
+            socket.off('FirstRequest', ()=>{});
             return;
         }
 
@@ -69,6 +71,7 @@ io.on('connection', (socket) => {
                 console.log('Initial data is invalid');
                 socket.emit('error', { status: false, message: 'Initial data validation failed.' });
                 //socket.disconnect(true);
+                socket.off('FirstRequest', ()=>{});
                 return;
             }
 
@@ -100,6 +103,48 @@ io.on('connection', (socket) => {
             });
 
             //wait for the end of the connection and then start assmbling the file
+            socket.on('finalStatus', (msg) => {
+                if (!msg.status) {
+                    // Очистка, если передача была неуспешной
+                    var props = Object.getOwnPropertyNames(FileParts);
+                    for (var i = 0; i < props.length; i++) {
+                        delete FileParts[props[i]];
+                    }
+                    socket.emit('finalResponse', { status: false });
+                    socket.off('FirstRequest', ()=>{});
+                    return;
+                } else {
+                    // Сборка и сохранение файла
+                    const fileLocation = path.join(__dirname, 'files', `${Date.now()}`);
+                    const data = Object.values(FileParts).reduce((acc, part) => Buffer.concat([acc, Buffer.from(part)]), Buffer.alloc(0));
+                    
+                    // Сохранение собранного файла
+                    fs.writeFile(`${fileLocation}.bin`, data, (err) => {
+                        if (err) {
+                            console.error('Failed to save the file:', err);
+                            socket.emit('finalResponse', { status: false });
+                            socket.off('FirstRequest', ()=>{});
+                            return;
+                        }
+        
+                        // Сохранение метаданных в JSON
+                        fs.writeFile(`${fileLocation}.json`, JSON.stringify(FileProofs.size), (err) => {
+                            if (err) {
+                                console.error('Failed to save metadata:', err);
+                                socket.emit('finalResponse', { status: false });
+                                socket.off('FirstRequest', ()=>{});
+                                return;
+                            }
+        
+                            // Все успешно сохранено
+                            console.log('File and metadata saved successfully.');
+                            socket.emit('finalResponse', { status: true, fileLocation: path.basename(fileLocation) });
+                            socket.off('FirstRequest', ()=>{});
+                            return 
+                        });
+                    });
+                }
+            });        
         });
 
 
@@ -116,19 +161,6 @@ server.listen(PORT, () => {
     console.log(`Сервер запущен на порту ${PORT}`);
 });
 
-
-
-
-
-
-// class CryptoUtils {
-//     // Метод для генерации SHA-256 хэша
-//     static sha256(data) {
-//         const hash = crypto.createHash('sha256');
-//         hash.update(data);
-//         return hash.digest('hex');  // Возвращает хэш в виде hex-строки
-//     }
-// }
 
 function generateCustomSaltedHashSync(text, providedSalt) {
     const sha256 = (data) => {
