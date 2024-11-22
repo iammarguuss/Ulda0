@@ -8,110 +8,112 @@ class FileProcessor {
         });
     }
 
-    async sendFile(file, key, passworgConfig) {
-        const starting = await this.SendFileProcessing.SaltSplitter(key);
-        console.log('Starting data:', starting);
-    
-        const firstPackRunner = {
-            salt: starting.salt,
-            start: starting.splitHash[0]
-        };
-    
-        const try_connect = await new Promise((resolve) => {
-            let DropMe = false
-            this.socket.emit('FirstRequest', firstPackRunner, (response) => {
-                if (response.error) {
+    async sendFile(file, key, passwordConfig) {
+        try{
+            const starting = await this.SendFileProcessing.SaltSplitter(key);
+            console.log('Starting data:', starting);
+        
+            const firstPackRunner = {
+                salt: starting.salt,
+                start: starting.splitHash[0]
+            };
+        
+            const try_connect = await new Promise((resolve) => {
+                let DropMe = false
+                this.socket.emit('FirstRequest', firstPackRunner, (response) => {
+                    if (response.error) {
+                        DropMe = true;
+                        resolve({ success: false, message: 'No response from server, server is down' }); // Ошибка отправки файла
+                        return
+                    } else {resolve(response); // Успешный ответ от сервера
+                    }
+                });
+                // Слушаем ответ на правильное событие
+                this.socket.on('FirstResponse', (response) => {
+                    console.log(DropMe)
+                    if(DropMe){return resolve()}
+                    console.log(response);
+                    if (response.status && response.end === starting.splitHash[1]) {
+                        console.log('Positive response from server:', response);
+                        resolve({ success: true, message: 'We can start uploading' });
+                    } else {
+                        console.log('Error response from server:', 'Verification failed');
+                        resolve({ success: false, message: 'Error sending file: Verification failed' });
+                    }
+                });
+                // Тайм-аут
+                setTimeout(() => {
                     DropMe = true;
-                    resolve({ success: false, message: 'No response from server, server is down' }); // Ошибка отправки файла
-                    return
-                } else {resolve(response); // Успешный ответ от сервера
-                }
+                    resolve({ success: false, message: 'Timeout: No response from server' });
+                }, 3000); // or kill connection
             });
-            // Слушаем ответ на правильное событие
-            this.socket.on('FirstResponse', (response) => {
-                console.log(DropMe)
-                if(DropMe){return resolve()}
-                console.log(response);
-                if (response.status && response.end === starting.splitHash[1]) {
-                    console.log('Positive response from server:', response);
-                    resolve({ success: true, message: 'We can start uploading' });
-                } else {
-                    console.log('Error response from server:', 'Verification failed');
-                    resolve({ success: false, message: 'Error sending file: Verification failed' });
-                }
-            });
-            // Тайм-аут
-            setTimeout(() => {
-                DropMe = true;
-                resolve({ success: false, message: 'Timeout: No response from server' });
-            }, 3000); // or kill connection
-        });
-    
-        // here we have established our connection to the server
-        if(!try_connect.success){
-            return {status:false,message:try_connect.message}
-        }
-
-        ///////////////////// Now lets encrypt the file then))) ///////////////////////
-        const fileMeta = this.SendFileProcessing.GetMeta(file)
-        console.log(fileMeta)
-
-        // check max file size
-        if(this.config.MAX_FILE_SIZE < fileMeta.Meta.size){
-            return {status:false,message:"File is just too big :("}
-        }
-
-        // cutting chunks
-        let chunks = await this.SendFileProcessing.fileSplitter(file);
-        console.log("Chanks are splitted in ",chunks)
-
-        // signing via crc32
-        //chunks = await this.SendFileProcessing.OriginSigning(chunks)
-        await this.SendFileProcessing.OriginSigning(chunks)
-        console.log(chunks)
-
-        // generating keis and ivs
-        await this.SendFileProcessing.generateKeysAndIVs(chunks);
-        console.log(chunks)
-
-        // encrypting chanks
-        await this.SendFileProcessing.encryptChunks(chunks);
-        console.log(chunks)
-
-        //encrypt 1st chank and signature crc32 => start sending proccess  =)
-        chunks[0] = await this.localCrypto.newEncContentFile(chunks[0],passworgConfig)
-        console.log(chunks[0])
-
-        const proofer = await this.SendFileProcessing.saveChunkMetadata(chunks)
-        console.log(proofer)
-
-        const signatures = await this.localCrypto.sendGetFunSignatures(Object.keys(chunks).length); // giving signatures array to proof the delivery
-        console.log(signatures);
-
-        const serverResponse = await this.SendFileProcessing.initSender(chunks, signatures, proofer);
-        console.log(serverResponse)
         
-        if(!serverResponse.status){
-            return {status:false,message:"Server is down or the code shited itself"}
-        }
+            // here we have established our connection to the server
+            if(!try_connect.success){
+                return {status:false,message:try_connect.message}
+            }
 
-        const SuperSender = await this.SendFileProcessing.FileTransfer(chunks,signatures)
-        console.log(SuperSender)
+            ///////////////////// Now lets encrypt the file then))) ///////////////////////
+            const fileMeta = this.SendFileProcessing.GetMeta(file)
+            console.log(fileMeta)
 
-        const FinalReporter = await this.SendFileProcessing.FinalReporter(SuperSender)
-        //console.log(FinalReporter)
+            // check max file size
+            if(this.config.MAX_FILE_SIZE < fileMeta.Meta.size){
+                return {status:false,message:"File is just too big :("}
+            }
 
-        if(!SuperSender) { 
-            return {status:false,message:"File was not uploaded"}
-        }else{
-            return FinalReporter
+            // cutting chunks
+            let chunks = await this.SendFileProcessing.fileSplitter(file);
+            console.log("Chanks are splitted in ",chunks)
+
+            // signing via crc32
+            //chunks = await this.SendFileProcessing.OriginSigning(chunks)
+            await this.SendFileProcessing.OriginSigning(chunks)
+            console.log(chunks)
+
+            // generating keis and ivs
+            await this.SendFileProcessing.generateKeysAndIVs(chunks);
+            console.log(chunks)
+
+            // encrypting chanks
+            await this.SendFileProcessing.encryptChunks(chunks);
+            console.log(chunks)
+
+            //encrypt 1st chank and signature crc32 => start sending proccess  =)
+            chunks[0] = await this.localCrypto.newEncContentFile(chunks[0],passwordConfig)
+            console.log(chunks[0])
+
+            const proofer = await this.SendFileProcessing.saveChunkMetadata(chunks)
+            proofer.key = await this.localCrypto.Sha256(passwordConfig.toDeleteKey)
+            console.log(proofer)
+
+            const signatures = await this.localCrypto.sendGetFunSignatures(Object.keys(chunks).length); // giving signatures array to proof the delivery
+            console.log(signatures);
+
+            const serverResponse = await this.SendFileProcessing.initSender(chunks, signatures, proofer);
+            console.log(serverResponse)
             
+            if(!serverResponse.status){
+                return {status:false,message:"Server is down or the code shited itself"}
+            }
+
+            const SuperSender = await this.SendFileProcessing.FileTransfer(chunks,signatures)
+            console.log(SuperSender)
+
+            const FinalReporter = await this.SendFileProcessing.FinalReporter(SuperSender)
+            //console.log(FinalReporter)
+
+            if(!SuperSender) { 
+                return {status:false,message:"File was not uploaded"}
+            }else{
+                // this is the end
+                return FinalReporter
+            }
         }
-        //send responce that file is sent or not
-
-
-        
-        //return try_connect;
+        catch{
+            // may be disconnect the client, as an idea
+            return {status:false,message:"Code was modifed and droped an error. RELOAD THE PAGE!"}
+        }
     }
     
     
@@ -494,18 +496,19 @@ document.addEventListener('DOMContentLoaded', () => {
             serverHost: 'localhost',
             serverPort: 3000,
             MAX_FILE_SIZE: 52428800, //in bytes ))
+        };
 
+        const passwordConfig = {
             //here is ths password for encryption
             // this one is generated by Ulda0 generator, I hope
             iv:"fe5dba3ee7832c899c6826955c1d7dd1",
             password:"wzlxMsbekMOSXeFkFvnMdBbMpLKmHPz84XBk5TKyefk=",
-            salt:"GRIuiZTDHZAUfwSz+/fsZvPS8uYYmic48OO+fLmyltw="
-        };
-
-
+            salt:"GRIuiZTDHZAUfwSz+/fsZvPS8uYYmic48OO+fLmyltw=",
+            toDeleteKey: "Some origin key that should be saved in origin content file",
+        }
         
         const processor = new FileProcessor(config);
-        const fileWasSent = await processor.sendFile(file,config.key,{iv:config.iv,password:config.password,salt:config.salt});
+        const fileWasSent = await processor.sendFile(file,config.key,passwordConfig);
         console.log(fileWasSent)
     });
 });

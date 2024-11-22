@@ -61,6 +61,7 @@ io.on('connection', (socket) => {
             FileProofs.signatures[5] = data.signatures;
             FileParts[0] = data.zeroChunk;
             FileProofs.size = data.proofer;
+            //FileProofs.size.key => has the key to allow it to be deleted
 
             isValid = CRC32Byte(data.zeroChunk) === FileProofs.size[0].crc32 ? true : false
 
@@ -147,6 +148,12 @@ io.on('connection', (socket) => {
             });        
         });
 
+        setTimeout(() => {  // if user disconnected by mistake
+            console.log(`Timeout for ${socket.id}, stopping 'FirstRequest' listener.`);
+            // Отключаем прослушивание события 'FirstRequest'
+            socket.off('FirstRequest', ()=>{});
+            //socket.disconnect(true);
+        }, 120000);
 
 
     });
