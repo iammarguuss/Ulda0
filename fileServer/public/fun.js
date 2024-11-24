@@ -103,7 +103,7 @@ class FileProcessor {
             console.log(SuperSender)
 
             const FinalReporter = await this.SendFileProcessing.FinalReporter(SuperSender)
-            //console.log(FinalReporter)
+            console.log(FinalReporter)
 
             if(!SuperSender) { 
                 return {status:false,message:"File was not uploaded"}
@@ -396,7 +396,7 @@ class FileProcessor {
             this.socket.emit('startFileTransfer', initialData);
 
             // Создаем промис, который будет ждать ответа сервера
-            return new Promise((resolve, reject) => {
+            return new Promise((resolve) => {
                 this.socket.once('initialDataReceived', (response) => {
                     resolve(response);
                 });
