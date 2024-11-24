@@ -146,7 +146,7 @@ io.on('connection', (socket) => {
                     });
                 }
             });        
-        });
+        }); 
 
         setTimeout(() => {  // if user disconnected by mistake
             console.log(`Timeout for ${socket.id}, stopping 'FirstRequest' listener.`);
@@ -154,6 +154,27 @@ io.on('connection', (socket) => {
             socket.off('FirstRequest', ()=>{});
             //socket.disconnect(true);
         }, 120000);
+
+
+    });
+
+    socket.on('requestFile', (message) => {
+        console.log('Received message:', message);
+
+        socket.emit('JUST A SAMPLE FOR NOW', response);
+
+        socket.on('JUST A SAMPLE FOR NOW', (data) => {
+            
+            
+
+        }); 
+
+        setTimeout(() => {  // if user disconnected by mistake
+            console.log(`Timeout for ${socket.id}, stopping 'FirstRequest' listener.`);
+            // Отключаем прослушивание события 'FirstRequest'
+            socket.off('requestFile', ()=>{});
+            //socket.disconnect(true);
+        }, 30000);
 
 
     });

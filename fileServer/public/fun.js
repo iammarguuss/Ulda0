@@ -10,6 +10,8 @@ class FileProcessor {
 
     async sendFile(file, key, passwordConfig) {
         try{
+            // TODO test if the connection is up
+
             const starting = await this.SendFileProcessing.SaltSplitter(key);
             console.log('Starting data:', starting);
         
@@ -481,12 +483,51 @@ class FileProcessor {
                 this.socket.emit('finalStatus', { status: finalStatus});
             });
         }
+    }
+    
+    async getFile (fileID) {
+        // Проверяем, активно ли соединение
+        if (!this.socket) {     // TODO make a better check
+            return { status: false, message: "Socket connection is not active." };
+        }
 
-        
-        
+        const header = await this.GetFileProcessing.requestFile(fileID);
+        if(!header.status){
+            return header;
+        }
+    }
+
+
+
+    GetFileProcessing = {    
+            requestFile: (fileID) => {
+                return new Promise((resolve) => {
+                    // Формируем и отправляем запрос на сервер
+                    this.socket.emit({ action: 'requestFile', fileID });
+    
+                    // Ожидаем ответ сервера
+                    this.socket.once = (message) => {
+                        if (message.status) {
+                            resolve({ status: true, data: message.data });
+                        } else {
+                            resolve({ status: false, message: "There is no such  file" });
+                        }
+                    };
+                    // Таймер для таймаута запроса
+                    setTimeout(() => {
+                        resolve({ status: false, message: "Server looks to be down" });
+                    }, 10000); // Таймаут 10 секунд
+                });
+            },
+
+
+
+
+        }
     };
 
-}
+
+
 
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fileInput').addEventListener('change', async (event) => {
@@ -510,5 +551,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const processor = new FileProcessor(config);
         const fileWasSent = await processor.sendFile(file,config.key,passwordConfig);
         console.log(fileWasSent)
+
+        const fileWasGet = await processor.getFile(fileWasSent.fileLocation,passwordConfig);
+        console.log(fileWasGet)
     });
 });
