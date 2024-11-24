@@ -19,144 +19,7 @@ io.on('connection', (socket) => {
     console.log('User is UP');
  
     // Получение файла от клиента
-    socket.on('FirstRequest', (message) => {
-        console.log('Received message:', message);
-        const response = {
-            status: true,
-            end: null
-        };
-
-        const result = generateCustomSaltedHashSync(GlobalTestKey, message.salt);
-        if (result.splitHash[0] !== message.start) {
-            response.status = false;
-            console.log('Hash check failed');
-        } else {
-            response.end = result.splitHash[1];
-            console.log('Hash check succeeded');
-        }
-
-        console.log('Sending response:', response);
-        // Отправляем подтверждение обратно клиенту
-        socket.emit('FirstResponse', response);
-
-        // drop connection if not passed the check
-        if(!response.status){
-            //socket.disconnect(true);
-            socket.off('FirstRequest', ()=>{});
-            return;
-        }
-
-
-        const FileParts = {};
-        const TheFile = "";
-        const FileProofs = {};
-        //Trying to recive the file
-        // may be should be changed later
-        socket.on('startFileTransfer', (data) => {
-            console.log('Received initial file transfer data', data);
-
-            // Производим необходимые проверки
-            let isValid = true;
-            FileProofs.signatures = {}
-            FileProofs.signatures[5] = data.signatures;
-            FileParts[0] = data.zeroChunk;
-            FileProofs.size = data.proofer;
-            //FileProofs.size.key => has the key to allow it to be deleted
-
-            isValid = CRC32Byte(data.zeroChunk) === FileProofs.size[0].crc32 ? true : false
-
-            if (isValid) {
-                console.log('Initial data is valid');
-                socket.emit('initialDataReceived', { status: true, message: 'Initial data received and validated.' });
-            } else {
-                console.log('Initial data is invalid');
-                socket.emit('error', { status: false, message: 'Initial data validation failed.' });
-                //socket.disconnect(true);
-                socket.off('FirstRequest', ()=>{});
-                return;
-            }
-
-            // actual sending chunkings
-            socket.on('Protocol', (msg) => {
-                if (typeof FileProofs.signatures[msg.level] === "undefined") {
-                    FileProofs.signatures[msg.level] = {};
-                }
-                let chank_status = true; 
-                //checkSize
-                chank_status = CRC32Byte(msg.chunk) === FileProofs.size[msg.id].crc32 ? true : false
-                //if(!chank_status) console.log("CRC32 shited itself");
-                chank_status = msg.chunk.byteLength === FileProofs.size[msg.id].size ? true : false
-                //if(!chank_status) console.log("SIZEING shited itself");
-                chank_status = (sha256(msg.sign) === FileProofs.signatures[msg.level+1][msg.id]) ? true : false
-                FileProofs.signatures[msg.level][msg.id] = sha256(msg.sign);  // updateing the very last one
-                //if(!chank_status) console.log("SIGNATURING shited itself");
-                console.log("We tested chunk number " + msg.id)
-
-                //////////////////////////FORCE ERROR TO CHECK IF IT WORKS//////////////////////////
-                //chank_status = Math.random() < 0.5;
-                //////////////////////////FORCE ERROR TO CHECK IF IT WORKS//////////////////////////
-                
-                socket.emit('Chank'+msg.id, { status: chank_status, id: msg.id,level:msg.level });
-            
-                if(chank_status){
-                    FileParts[msg.id] = msg.chunk;
-                }
-            });
-
-            //wait for the end of the connection and then start assmbling the file
-            socket.on('finalStatus', (msg) => {
-                if (!msg.status) {
-                    // Очистка, если передача была неуспешной
-                    var props = Object.getOwnPropertyNames(FileParts);
-                    for (var i = 0; i < props.length; i++) {
-                        delete FileParts[props[i]];
-                    }
-                    socket.emit('finalResponse', { status: false });
-                    socket.off('FirstRequest', ()=>{});
-                    return;
-                } else {
-                    // Сборка и сохранение файла
-                    const fileLocation = path.join(__dirname, 'files', `${Date.now()}`);
-                    const data = Object.values(FileParts).reduce((acc, part) => Buffer.concat([acc, Buffer.from(part)]), Buffer.alloc(0));
-                    
-                    // Сохранение собранного файла
-                    fs.writeFile(`${fileLocation}.bin`, data, (err) => {
-                        if (err) {
-                            console.error('Failed to save the file:', err);
-                            socket.emit('finalResponse', { status: false });
-                            socket.off('FirstRequest', ()=>{});
-                            return;
-                        }
-        
-                        // Сохранение метаданных в JSON
-                        fs.writeFile(`${fileLocation}.json`, JSON.stringify(FileProofs.size), (err) => {
-                            if (err) {
-                                console.error('Failed to save metadata:', err);
-                                socket.emit('finalResponse', { status: false });
-                                socket.off('FirstRequest', ()=>{});
-                                return;
-                            }
-        
-                            // Все успешно сохранено
-                            console.log('File and metadata saved successfully.');
-                            socket.emit('finalResponse', { status: true, fileLocation: path.basename(fileLocation) });
-                            socket.off('FirstRequest', ()=>{});
-                            return 
-                        });
-                    });
-                }
-            });        
-        }); 
-
-        setTimeout(() => {  // if user disconnected by mistake
-            console.log(`Timeout for ${socket.id}, stopping 'FirstRequest' listener.`);
-            // Отключаем прослушивание события 'FirstRequest'
-            socket.off('FirstRequest', ()=>{});
-            //socket.disconnect(true);
-        }, 120000);
-
-
-    });
+    socket.on('FirstRequest', handleFirstRequest.bind(null, socket));
 
     socket.on('requestFile', (message) => {
         console.log('Received message:', message);
@@ -174,7 +37,7 @@ io.on('connection', (socket) => {
             // Отключаем прослушивание события 'FirstRequest'
             socket.off('requestFile', ()=>{});
             //socket.disconnect(true);
-        }, 30000);
+        }, 120000);
 
 
     });
@@ -266,3 +129,144 @@ function CRC32Byte (data) {
 function sha256 (data) {
     return crypto.createHash('sha256').update(data).digest('hex');
 };
+
+
+
+
+function handleFirstRequest(socket, message) {
+
+    console.log('Received message:', message);
+    const response = {
+        status: true,
+        end: null
+    };
+
+    const result = generateCustomSaltedHashSync(GlobalTestKey, message.salt);
+    if (result.splitHash[0] !== message.start) {
+        response.status = false;
+        console.log('Hash check failed');
+    } else {
+        response.end = result.splitHash[1];
+        console.log('Hash check succeeded');
+    }
+
+    console.log('Sending response:', response);
+    // Отправляем подтверждение обратно клиенту
+    socket.emit('FirstResponse', response);
+
+    // drop connection if not passed the check
+    if(!response.status){
+        //socket.disconnect(true);
+        socket.off('FirstRequest', ()=>{});
+        return;
+    }
+
+
+    const FileParts = {};
+    const TheFile = "";
+    const FileProofs = {};
+    //Trying to recive the file
+    // may be should be changed later
+    socket.on('startFileTransfer', (data) => {
+        console.log('Received initial file transfer data', data);
+
+        // Производим необходимые проверки
+        let isValid = true;
+        FileProofs.signatures = {}
+        FileProofs.signatures[5] = data.signatures;
+        FileParts[0] = data.zeroChunk;
+        FileProofs.size = data.proofer;
+        //FileProofs.size.key => has the key to allow it to be deleted
+
+        isValid = CRC32Byte(data.zeroChunk) === FileProofs.size[0].crc32 ? true : false
+
+        if (isValid) {
+            console.log('Initial data is valid');
+            socket.emit('initialDataReceived', { status: true, message: 'Initial data received and validated.' });
+        } else {
+            console.log('Initial data is invalid');
+            socket.emit('error', { status: false, message: 'Initial data validation failed.' });
+            //socket.disconnect(true);
+            socket.off('FirstRequest', ()=>{});
+            return;
+        }
+
+        // actual sending chunkings
+        socket.on('Protocol', (msg) => {
+            if (typeof FileProofs.signatures[msg.level] === "undefined") {
+                FileProofs.signatures[msg.level] = {};
+            }
+            let chank_status = true; 
+            //checkSize
+            chank_status = CRC32Byte(msg.chunk) === FileProofs.size[msg.id].crc32 ? true : false
+            //if(!chank_status) console.log("CRC32 shited itself");
+            chank_status = msg.chunk.byteLength === FileProofs.size[msg.id].size ? true : false
+            //if(!chank_status) console.log("SIZEING shited itself");
+            chank_status = (sha256(msg.sign) === FileProofs.signatures[msg.level+1][msg.id]) ? true : false
+            FileProofs.signatures[msg.level][msg.id] = sha256(msg.sign);  // updateing the very last one
+            //if(!chank_status) console.log("SIGNATURING shited itself");
+            console.log("We tested chunk number " + msg.id)
+
+            //////////////////////////FORCE ERROR TO CHECK IF IT WORKS//////////////////////////
+            //chank_status = Math.random() < 0.5;
+            //////////////////////////FORCE ERROR TO CHECK IF IT WORKS//////////////////////////
+            
+            socket.emit('Chank'+msg.id, { status: chank_status, id: msg.id,level:msg.level });
+        
+            if(chank_status){
+                FileParts[msg.id] = msg.chunk;
+            }
+        });
+
+        //wait for the end of the connection and then start assmbling the file
+        socket.on('finalStatus', (msg) => {
+            if (!msg.status) {
+                // Очистка, если передача была неуспешной
+                var props = Object.getOwnPropertyNames(FileParts);
+                for (var i = 0; i < props.length; i++) {
+                    delete FileParts[props[i]];
+                }
+                socket.emit('finalResponse', { status: false });
+                socket.off('FirstRequest', ()=>{});
+                return;
+            } else {
+                // Сборка и сохранение файла
+                const fileLocation = path.join(__dirname, 'files', `${Date.now()}`);
+                const data = Object.values(FileParts).reduce((acc, part) => Buffer.concat([acc, Buffer.from(part)]), Buffer.alloc(0));
+                
+                // Сохранение собранного файла
+                fs.writeFile(`${fileLocation}.bin`, data, (err) => {
+                    if (err) {
+                        console.error('Failed to save the file:', err);
+                        socket.emit('finalResponse', { status: false });
+                        socket.off('FirstRequest', ()=>{});
+                        return;
+                    }
+    
+                    // Сохранение метаданных в JSON
+                    fs.writeFile(`${fileLocation}.json`, JSON.stringify(FileProofs.size), (err) => {
+                        if (err) {
+                            console.error('Failed to save metadata:', err);
+                            socket.emit('finalResponse', { status: false });
+                            socket.off('FirstRequest', ()=>{});
+                            return;
+                        }
+    
+                        // Все успешно сохранено
+                        console.log('File and metadata saved successfully.');
+                        socket.emit('finalResponse', { status: true, fileLocation: path.basename(fileLocation) });
+                        socket.off('FirstRequest', ()=>{});
+                        return 
+                    });
+                });
+            }
+        });        
+    }); 
+
+    setTimeout(() => {  // if user disconnected by mistake
+        console.log(`Timeout for ${socket.id}, stopping 'FirstRequest' listener.`);
+        // Отключаем прослушивание события 'FirstRequest'
+        socket.off('FirstRequest', ()=>{});
+        //socket.disconnect(true);
+    }, 120000);
+}
