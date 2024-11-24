@@ -552,7 +552,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const fileWasSent = await processor.sendFile(file,config.key,passwordConfig);
         console.log(fileWasSent)
 
-        const fileWasGet = await processor.getFile(fileWasSent.fileLocation,passwordConfig);
-        console.log(fileWasGet)
+        // // png picture for the test
+        // const fileWasGet = await processor.getFile('1732462986881',passwordConfig);
+        // console.log(fileWasGet)
+
+        // // exe file for the test
+        // const fileWasGet = await processor.getFile('1732463047705',passwordConfig);
+        // console.log(fileWasGet)
     });
 });

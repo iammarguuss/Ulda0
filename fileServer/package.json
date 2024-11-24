@@ -2,7 +2,7 @@
   "name": "fileserver",
   "version": "1.0.0",
   "description": "Just a little project to make sure that we can work with files now",
-  "main": "index.js",
+  "main": "app.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
