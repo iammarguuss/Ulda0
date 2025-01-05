@@ -21,26 +21,139 @@ io.on('connection', (socket) => {
     // Получение файла от клиента
     socket.on('FirstRequest', handleFirstRequest.bind(null, socket));
 
+    //Now user gets the file
     socket.on('requestFile', (message) => {
         console.log('Received message:', message);
+    
+        let response = { status: true, data: null };
+    
+        // Проверка имени файла через регулярное выражение
+        const fileNamePattern = /^[0-9]+$/;
+        if (!fileNamePattern.test(message.fileID)) {
+            console.log('Invalid fileID format');
+            response = { status: false, message: 'Invalid fileID format' };
+        }
+    
+        // Проверка существования файла
+        if (response.status) {
+            const filePath = path.join(__dirname, 'files', `${message.fileID}.json`);
+            console.log('File path being checked:', filePath);
+    
+            if (!fs.existsSync(filePath)) {
+                console.log(`File ${message.fileID}.json does not exist`);
+                response = { status: false, message: 'File does not exist' };
+            } else {
+                try {
+                    const fileData = fs.readFileSync(filePath, 'utf8');
+                    console.log('File content:', fileData);
+                    response.data = JSON.parse(fileData);
+                } catch (err) {
+                    console.error('Error reading file:', err);
+                    response = { status: false, message: 'Error reading file' };
+                }
+            }
+        }
+    
+        // Отправка единого ответа
+        console.log('Sending response:', response);
+        socket.emit('requestFile', response);
+    
+        // Если проверка провалилась, закрываем соединение
+        if (!response.status) {
+            console.log('Disconnecting socket due to error');
+            socket.disconnect(true);
+        }
+    
+        const fileID = message.fileID
 
-        socket.emit('JUST A SAMPLE FOR NOW', response);
+        socket.on('Protocol', (message) => {
+            console.log(`Received Protocol request: ${message}`);
+        
+            if (message === true) {
+                console.log("Initializing Protocol...");
+        
+                // Путь к файлу и метаданным
+                const metadataPath = path.join(__dirname, 'files', `${fileID}.json`);
+                const filePath = path.join(__dirname, 'files', `${fileID}.bin`);
+        
+                if (!fs.existsSync(metadataPath) || !fs.existsSync(filePath)) {
+                    console.error("File or metadata not found");
+                    socket.emit('ProtocolReady', { status: false });
+                    return;
+                }
+        
+                try {
+                    console.log("Reading metadata...");
+                    const metadataContent = fs.readFileSync(metadataPath, 'utf8');
+                    const metadata = JSON.parse(metadataContent);
+        
+                    console.log("Reading binary file...");
+                    const fileBuffer = fs.readFileSync(filePath); // Читаем весь бинарный файл
+        
+                    // Инициализируем объект для хранения чанков
+                    const chunks = {};
+                    let currentPosition = 0;
+        
+                    // Получаем числовые ключи из метаданных
+                    const chunkKeys = Object.keys(metadata).filter((key) => !isNaN(Number(key)));
+                    console.log("Processing chunk keys:", chunkKeys);
+        
+                    // Разбиваем файл на чанки
+                    for (const key of chunkKeys) {
+                        const chunkID = parseInt(key, 10); // Преобразуем строковый ключ в число
+                        const size = metadata[chunkID]?.size;
+        
+                        if (!size || typeof size !== 'number') {
+                            console.error(`Invalid metadata for chunk ID ${chunkID}:`, metadata[chunkID]);
+                            socket.emit('ProtocolReady', { status: false, message: `Invalid metadata for chunk ID ${chunkID}` });
+                            return;
+                        }
+        
+                        // Извлекаем часть бинарного файла
+                        chunks[chunkID] = fileBuffer.slice(currentPosition, currentPosition + size);
+                        currentPosition += size;
+                    }
+        
+                    console.log("All chunks are ready. Sending them to the client...");
+        
+                    // Отправляем каждый чанк через отдельное событие
+                    for (const key of chunkKeys) {
+                        const chunkID = parseInt(key, 10);
+                        const chunk = chunks[chunkID];
+        
+                        socket.emit(`chank${chunkID}`, {
+                            status: true,
+                            chunk,
+                            crc32: metadata[chunkID].crc32,
+                            size: metadata[chunkID].size,
+                        });
+        
+                        console.log(`Chunk ID ${chunkID} sent to client via chank${chunkID}`);
+                    }
+        
+                    // Протокол готов
+                    socket.emit('ProtocolReady', { status: true });
+                } catch (err) {
+                    console.error("Error initializing Protocol:", err);
+                    socket.emit('ProtocolReady', { status: false });
+                }
+            }
+        });
+                    
+        
+        
+    
+        
+        
+        
+        
 
-        socket.on('JUST A SAMPLE FOR NOW', (data) => {
-            
-            
-
-        }); 
-
-        setTimeout(() => {  // if user disconnected by mistake
+        setTimeout(() => {
             console.log(`Timeout for ${socket.id}, stopping 'FirstRequest' listener.`);
-            // Отключаем прослушивание события 'FirstRequest'
-            socket.off('requestFile', ()=>{});
-            //socket.disconnect(true);
+            socket.off('requestFile', () => {});
         }, 120000);
-
-
     });
+    
 
     socket.on('disconnect', () => {
         console.log('Пользователь отключен');

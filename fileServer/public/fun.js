@@ -153,6 +153,29 @@ class FileProcessor {
 
             return (crc ^ (-1)) >>> 0; // Return as unsigned integer
         },
+        CRC32Byte: (buffer) => {
+            const makeCRCTable = () => {
+                let c;
+                const crcTable = [];
+                for (let n = 0; n < 256; n++) {
+                    c = n;
+                    for (let k = 0; k < 8; k++) {
+                        c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
+                    }
+                    crcTable[n] = c;
+                }
+                return crcTable;
+            };
+    
+            const crcTable = makeCRCTable();
+            let crc = 0 ^ (-1);
+    
+            for (let i = 0; i < buffer.byteLength; i++) {
+                crc = (crc >>> 8) ^ crcTable[(crc ^ buffer[i]) & 0xFF];
+            }
+    
+            return (crc ^ (-1)) >>> 0; // Возвращаем как беззнаковое целое число
+        },    
         aesEncrypt: async (data, key, iv) => {
             const algo = {
                 name: "AES-CBC",
@@ -485,40 +508,192 @@ class FileProcessor {
         }
     }
     
-    async getFile (fileID) {
-        // Проверяем, активно ли соединение
-        if (!this.socket) {     // TODO make a better check
-            return { status: false, message: "Socket connection is not active." };
-        }
+    async getFile (fileID,passwordConfig) {
+//        try {
+            // Проверяем, активно ли соединение
+            if (!this.socket) {     // TODO make a better check
+                return { status: false, message: "Socket connection is not active." };
+            }
 
-        const header = await this.GetFileProcessing.requestFile(fileID);
-        if(!header.status){
-            return header;
-        }
+            const header = await this.GetFileProcessing.requestFile(fileID);
+            if(!header.status){
+                //TODO killswitch for Protocol => false
+                return header.message;
+            }
+            console.log("Our header is ", header)
+
+            // Проверяем, принадлежит ли файл пользователю
+            const TestOrigin = await this.GetFileProcessing.CheckIfMine(header.data.key, passwordConfig.toDeleteKey);
+            if (!TestOrigin.status) {
+                return TestOrigin; // Возвращаем ошибку, если файл не принадлежит пользователю
+            }
+            console.log("TestOrigin is: ", TestOrigin)
+
+            const RawChanks = await this.GetFileProcessing.GetAllChanks(header.data);
+            if (!RawChanks.status) {
+                return RawChanks;
+            }
+            console.log("Raw chunks successfully received:", RawChanks.chunks);
+
+
+
+
+
+
+
+        // }catch (error) {
+        //     console.error("Error fetching file:", error);
+        //     return { status: false, message: "An error occurred while fetching the file." };
+        // }
     }
 
 
 
     GetFileProcessing = {    
-            requestFile: (fileID) => {
-                return new Promise((resolve) => {
-                    // Формируем и отправляем запрос на сервер
-                    this.socket.emit({ action: 'requestFile', fileID });
+        requestFile: (fileID) => {
+            return new Promise((resolve) => {
+                // Формируем и отправляем запрос на сервер
+                this.socket.emit('requestFile', { fileID });
     
-                    // Ожидаем ответ сервера
-                    this.socket.once = (message) => {
-                        if (message.status) {
-                            resolve({ status: true, data: message.data });
-                        } else {
-                            resolve({ status: false, message: "There is no such  file" });
-                        }
-                    };
-                    // Таймер для таймаута запроса
-                    setTimeout(() => {
-                        resolve({ status: false, message: "Server looks to be down" });
-                    }, 10000); // Таймаут 10 секунд
+                // Слушаем единственный ответ от сервера
+                this.socket.once('requestFile', (message) => {
+                    console.log("Сообщение от сервера о существовании файла", message);
+                    if (message.status) {
+                        resolve({ status: true, data: message.data });
+                    } else {
+                        resolve({ status: false, message: message.message });
+                    }
                 });
-            },
+    
+                // Таймаут для запроса
+                setTimeout(() => {
+                    resolve({ status: false, message: "Server looks to be down" });
+                }, 10000); // Таймаут 10 секунд
+            });
+        },
+    
+        CheckIfMine: async (fileKey, toDeleteKey) => {
+            try {
+                const derivedKey = await this.localCrypto.Sha256(toDeleteKey);
+    
+                if (derivedKey === fileKey) {
+                    return { status: true, message: "This file belongs to you." };
+                } else {
+                    return { status: false, message: "This file is not yours..." };
+                }
+            } catch (error) {
+                console.error("Error in CheckIfMine:", error);
+                return { status: false, message: "An error occurred during ownership check." };
+            }
+        },
+        
+        // Получение всех чанков
+        // Клиентский метод для получения чанков
+        GetAllChanks: async (headerData) => {
+            console.log("Starting GetAllChanks...");
+
+            // Получаем все ключи из headerData, которые являются числами
+            const chunkKeys = Object.keys(headerData).filter((key) => !isNaN(Number(key)));
+            console.log("Numeric chunk keys:", chunkKeys);
+
+            // Отправляем запрос на сервер для инициализации протокола
+            this.socket.emit('Protocol', true);
+
+            // Создаем массив промисов для загрузки чанков
+            const chunkPromises = [];
+            const retries = {}; // Счетчик попыток для каждого чанка
+
+            for (const key of chunkKeys) {
+                const chunkID = parseInt(key, 10); // Преобразуем строковый ключ в число
+                retries[chunkID] = 0; // Инициализируем счетчик попыток
+
+                chunkPromises.push(
+                    new Promise((resolve) => {
+                        const fetchChunk = (attempt) => {
+                            console.log(`Requesting chunk ID: ${chunkID}, attempt: ${attempt + 1}`);
+                            const timeout = setTimeout(() => {
+                                if (retries[chunkID] < 3) {
+                                    console.warn(`Timeout for chunk ID ${chunkID}, retrying...`);
+                                    retries[chunkID]++;
+                                    fetchChunk(attempt + 1); // Повторяем запрос
+                                } else {
+                                    console.error(`Timeout exceeded for chunk ID ${chunkID} after 3 attempts`);
+                                    resolve(null); // Таймаут, превышено количество попыток
+                                }
+                            }, 10000); // 10 секунд
+                        
+                            this.socket.emit(`chank${chunkID}`, true); // Запрашиваем чанк
+                        
+                            this.socket.once(`chank${chunkID}`, (response) => {
+                                clearTimeout(timeout); // Очищаем таймаут, так как получили ответ
+                        
+                                console.log(`Received response for chunk ID ${chunkID}:`, response);
+                        
+                                if (response.status) {
+                                    const isValid = this.localCrypto.CRC32Byte(
+                                        new Uint8Array(response.chunk),
+                                        response.crc32,
+                                        response.size
+                                    );
+                        
+                                    if (isValid) {
+                                        console.log(`Chunk ID ${chunkID} passed validation`);
+                                        resolve({ id: chunkID, chunk: response.chunk }); // Завершаем промис для успешного чанка
+                                    } else {
+                                        console.warn(`Chunk ID ${chunkID} failed validation, retrying...`);
+                                        if (attempt < 3) {
+                                            retries[chunkID]++;
+                                            fetchChunk(attempt + 1); // Повторяем запрос только для неуспешного чанка
+                                        } else {
+                                            console.error(`Failed to retrieve chunk ID ${chunkID} after 3 attempts`);
+                                            resolve(null); // Превышено количество попыток
+                                        }
+                                    }
+                                } else {
+                                    console.warn(`Server returned error for chunk ID ${chunkID}, retrying...`);
+                                    if (attempt < 3) {
+                                        retries[chunkID]++;
+                                        fetchChunk(attempt + 1); // Повторяем запрос только для неуспешного чанка
+                                    } else {
+                                        console.error(`Failed to retrieve chunk ID ${chunkID} after 3 attempts`);
+                                        resolve(null); // Превышено количество попыток
+                                    }
+                                }
+                            });
+                        };
+                        
+                        fetchChunk(0); // Первая попытка загрузки чанка
+                    })
+                );
+            }
+
+            // Ждем завершения всех промисов
+            const chunks = await Promise.all(chunkPromises);
+
+            // Проверяем, есть ли неудачные чанки
+            if (chunks.includes(null)) {
+                console.error("Failed to retrieve all chunks");
+                return { status: false, message: "Failed to retrieve all chunks" };
+            }
+
+            console.log("Successfully retrieved all chunks.");
+            const orderedChunks = chunks.sort((a, b) => a.id - b.id).map((chunk) => chunk.chunk);
+            return { status: true, chunks: orderedChunks };
+        },
+
+        CheckSumChank: (chunk, expectedCrc32, expectedSize) => {
+            console.log("Validating chunk...");
+        
+            const calculatedCrc32 = this.localCrypto.CRC32Byte(new Uint8Array(chunk));
+            const isSizeValid = chunk.byteLength === expectedSize;
+        
+            console.log(`CRC32: calculated=${calculatedCrc32}, expected=${expectedCrc32}`);
+            console.log(`Size: calculated=${chunk.byteLength}, expected=${expectedSize}`);
+        
+            return calculatedCrc32 === expectedCrc32 && isSizeValid;
+        }
+    
+        
 
 
 
@@ -545,16 +720,16 @@ document.addEventListener('DOMContentLoaded', () => {
             iv:"fe5dba3ee7832c899c6826955c1d7dd1",
             password:"wzlxMsbekMOSXeFkFvnMdBbMpLKmHPz84XBk5TKyefk=",
             salt:"GRIuiZTDHZAUfwSz+/fsZvPS8uYYmic48OO+fLmyltw=",
-            toDeleteKey: "Some origin key that should be saved in origin content file",
+            toDeleteKey: "Some origin key that should be saved in origin content file", // this one is responsable for deletion or modification
         }
         
-        const processor = new FileProcessor(config);
-        const fileWasSent = await processor.sendFile(file,config.key,passwordConfig);
-        console.log(fileWasSent)
+         const processor = new FileProcessor(config);
+        // const fileWasSent = await processor.sendFile(file,config.key,passwordConfig);
+        // console.log(fileWasSent)
 
         // // png picture for the test
-        // const fileWasGet = await processor.getFile('1732462986881',passwordConfig);
-        // console.log(fileWasGet)
+        const fileWasGet = await processor.getFile('1732462986881',passwordConfig);
+        console.log(fileWasGet)
 
         // // exe file for the test
         // const fileWasGet = await processor.getFile('1732463047705',passwordConfig);

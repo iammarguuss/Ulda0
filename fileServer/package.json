@@ -11,6 +11,7 @@
   "dependencies": {
     "crypto": "^1.0.1",
     "express": "^4.21.1",
+    "nodemon": "^3.1.9",
     "socket.io": "^4.8.1"
   }
 }
