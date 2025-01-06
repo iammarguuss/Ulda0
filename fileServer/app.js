@@ -131,27 +131,41 @@ io.on('connection', (socket) => {
                         console.log(`Chunk ID ${chunkID} sent to client via chank${chunkID}`);
                     }
         
+                    socket.on('chank', (message) => {
+                        // Отправляем чанк клиенту
+                        const chunk = chunks[message.id];
+                        const crc32 = response.data[message.id].crc32;
+                        const size = response.data[message.id].size;
+                    
+                        console.log(`Sending chunk ID ${message.id} to client...`);
+                        socket.emit(`chank${message.id}`, {
+                            status: true,
+                            chunk,
+                            crc32,
+                            size,
+                        });
+                    });
+
+                    
                     // Протокол готов
-                    socket.emit('ProtocolReady', { status: true });
+                    //socket.emit('ProtocolReady', { status: true });
                 } catch (err) {
                     console.error("Error initializing Protocol:", err);
                     socket.emit('ProtocolReady', { status: false });
                 }
             }
         });
-                    
-        
-        
-    
-        
-        
-        
-        
+
+        socket.on('IamDone', () => {
+            console.log("User is done here");
+            socket.off('requestFile', () => {});
+        });
 
         setTimeout(() => {
             console.log(`Timeout for ${socket.id}, stopping 'FirstRequest' listener.`);
             socket.off('requestFile', () => {});
         }, 120000);
+    
     });
     
 

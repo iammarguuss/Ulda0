@@ -70,7 +70,7 @@ class FileProcessor {
 
             // signing via crc32
             //chunks = await this.SendFileProcessing.OriginSigning(chunks)
-            await this.SendFileProcessing.OriginSigning(chunks)
+            await this.SendFileProcessing.OriginSigning(chunks,fileMeta.Meta)
             console.log(chunks)
 
             // generating keis and ivs
@@ -183,6 +183,13 @@ class FileProcessor {
             };
             return crypto.subtle.encrypt(algo, key, data);
         },
+        aesDecrypt: async (data, key, iv) => {
+            const algo = {
+                name: "AES-CBC",
+                iv: iv
+            };
+            return crypto.subtle.decrypt(algo, key, data);
+        },
         importKey: async (base64Key, algo) => {
             const rawKey = this.localCrypto.base64ToArrayBuffer(base64Key);
             return crypto.subtle.importKey(
@@ -191,6 +198,16 @@ class FileProcessor {
                 algo,
                 false,
                 ["encrypt"]
+            );
+        },
+        importKeyDec: async (base64Key, algo) => {
+            const rawKey = this.localCrypto.base64ToArrayBuffer(base64Key);
+            return crypto.subtle.importKey(
+                "raw",
+                rawKey,
+                algo,
+                false, // Ключ нельзя экспортировать
+                ["decrypt"] // Добавляем возможность дешифровки
             );
         },
         base64ToArrayBuffer: (base64) => {
@@ -249,6 +266,60 @@ class FileProcessor {
           
             return new Uint8Array(encryptedData);
         },
+        newDecContentFile: async (encryptedData, passwordSettings) => { // got from ulda0, but modifed
+            const { password, iv, salt } = passwordSettings;
+
+            const encoder = new TextEncoder();
+
+            // Убедимся, что encryptedData имеет правильный тип
+            let encryptedBuffer;
+            if (encryptedData instanceof ArrayBuffer) {
+                encryptedBuffer = encryptedData;
+            } else if (ArrayBuffer.isView(encryptedData)) {
+                encryptedBuffer = encryptedData.buffer;
+            } else {
+                throw new TypeError("Invalid type for encryptedData. Expected ArrayBuffer or ArrayBufferView.");
+            }
+
+            // Преобразование пароля в ключ (обеспечение нужной длины 256 бит)
+            const passwordBytes = encoder.encode(password).slice(0, 32);
+            const key = await crypto.subtle.importKey(
+                "raw",
+                passwordBytes, // Теперь пароль точно 256 бит
+                { name: "AES-CBC" },
+                false,
+                ["decrypt"]
+            );
+
+            const ivArray = new Uint8Array(iv.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+
+            // Расшифровка данных
+            const decryptedData = await crypto.subtle.decrypt(
+                {
+                    name: "AES-CBC",
+                    iv: ivArray
+                },
+                key,
+                encryptedBuffer
+            );
+
+            const decryptedBytes = new Uint8Array(decryptedData);
+            const saltBytes = encoder.encode(salt);
+            const saltedData = new Uint8Array(decryptedBytes.length);
+
+            // Применение операции XOR к расшифрованным данным
+            for (let i = 0; i < decryptedBytes.length; i++) {
+                saltedData[i] = decryptedBytes[i] ^ saltBytes[i % saltBytes.length];
+            }
+
+            // Удаление 32 случайных байт из начала данных после XOR
+            const originalData = saltedData.slice(32);
+
+            console.log("Decryption successful. Returning raw bytes.");
+
+            // Возвращаем исходные байты без преобразования в строку
+            return originalData;
+        },        
         CRC32Byte: (data) => {
             const makeCRCTable = () => {
                 let c;
@@ -353,7 +424,7 @@ class FileProcessor {
             }
             return chunks; // Возвращаем объект с чанками
         },
-        OriginSigning: async (chunks) => {
+        OriginSigning: async (chunks,meta) => {
             // Проверка наличия контейнера для подписей
             if (!chunks[0]) {chunks[0] = { origins: {} };}
             // Подписываем каждый чанк
@@ -363,6 +434,8 @@ class FileProcessor {
                 const signature = this.localCrypto.CRC32(chunk.toString());
                 chunks[0].origins[chunkNumber] = signature;
             }
+            //////////////////////////////////////////////////////////ID ADDED META HERE
+            chunks[0].origins.meta = btoa(JSON.stringify(meta));
             return chunks;
         },
         generateKeysAndIVs: async (chunks) => {
@@ -535,11 +608,22 @@ class FileProcessor {
             }
             console.log("Raw chunks successfully received:", RawChanks.chunks);
 
+            let over = await this.socket.emit(`IamDone`,RawChanks.status); // now we disconnect from server
 
+            let chunk = {} 
+            let FirstChank = await this.GetFileProcessing.processFirstChunk(RawChanks.chunks[0], passwordConfig);
+            chunk[0] = FirstChank.data
+            if (!FirstChank.status) {
+                return RawChanks;
+            }
 
+            chunk = await this.GetFileProcessing.decryptAllChunks(RawChanks.chunks, FirstChank.data);
+            console.log(chunk)
+            
+            let file = await this.GetFileProcessing.assembleFileFromChunks(chunk,chunk[0])
+            console.log(file);
 
-
-
+            return file
 
         // }catch (error) {
         //     console.error("Error fetching file:", error);
@@ -571,7 +655,6 @@ class FileProcessor {
                 }, 10000); // Таймаут 10 секунд
             });
         },
-    
         CheckIfMine: async (fileKey, toDeleteKey) => {
             try {
                 const derivedKey = await this.localCrypto.Sha256(toDeleteKey);
@@ -586,9 +669,6 @@ class FileProcessor {
                 return { status: false, message: "An error occurred during ownership check." };
             }
         },
-        
-        // Получение всех чанков
-        // Клиентский метод для получения чанков
         GetAllChanks: async (headerData) => {
             console.log("Starting GetAllChanks...");
 
@@ -622,13 +702,18 @@ class FileProcessor {
                                 }
                             }, 10000); // 10 секунд
                         
-                            this.socket.emit(`chank${chunkID}`, true); // Запрашиваем чанк
+                            if(attempt > 0){
+                                this.socket.emit(`chank`, {id:chunkID}); // Запрашиваем чанк
+                            }
                         
                             this.socket.once(`chank${chunkID}`, (response) => {
                                 clearTimeout(timeout); // Очищаем таймаут, так как получили ответ
                         
                                 console.log(`Received response for chunk ID ${chunkID}:`, response);
-                        
+                                
+                                // THIS IT TEST AND TO BE DELETED
+                                //response.status = Math.random() < 0.5;
+                                
                                 if (response.status) {
                                     const isValid = this.localCrypto.CRC32Byte(
                                         new Uint8Array(response.chunk),
@@ -680,7 +765,6 @@ class FileProcessor {
             const orderedChunks = chunks.sort((a, b) => a.id - b.id).map((chunk) => chunk.chunk);
             return { status: true, chunks: orderedChunks };
         },
-
         CheckSumChank: (chunk, expectedCrc32, expectedSize) => {
             console.log("Validating chunk...");
         
@@ -691,8 +775,131 @@ class FileProcessor {
             console.log(`Size: calculated=${chunk.byteLength}, expected=${expectedSize}`);
         
             return calculatedCrc32 === expectedCrc32 && isSizeValid;
+        },
+        processFirstChunk: async (chunkBody, passwordConfig) => {
+            try {
+                console.log("Processing first chunk...");
+                
+                // Расшифровываем чанк с использованием newDecContentFile
+                const decryptedContent = await this.localCrypto.newDecContentFile(chunkBody, passwordConfig);
+                
+                // Преобразуем расшифрованные данные в JSON
+                const parsedJson = JSON.parse(new TextDecoder().decode(decryptedContent));
+    
+                console.log("First chunk successfully processed:", parsedJson);
+    
+                const metaBase64 = parsedJson.origins.meta;
+                const metaJsonString = atob(metaBase64); // Декодируем из Base64
+                const metaJson = JSON.parse(metaJsonString); // Преобразуем строку обратно в JSON
+                // Записываем обратно в parsedJson
+                parsedJson.origins.meta = metaJson;
+                console.log("Processed meta data:", parsedJson.origins.meta);
+                return { status: true, data: parsedJson };
+            } catch (error) {
+                console.error("Error processing first chunk:", error);
+                return { status: false, data: "Error processing first chunk" };
+            }
+        },
+        decryptAllChunks: async (rawChunks, firstChunk) => {
+            console.log("Starting decryption of all chunks...");
+        
+            const algo = { name: "AES-CBC", length: 256 };
+            let decryptedChunks = []; // Изменяем const на let
+            let result = { status: true, message: "Decryption successful" };
+        
+            for (let chunkNumber = 1; chunkNumber < rawChunks.length; chunkNumber++) {
+                const chunk = rawChunks[chunkNumber];
+                const keyData = firstChunk.keys[chunkNumber];
+        
+                try {
+                    // Импортируем ключ
+                    const key = await this.localCrypto.importKeyDec(keyData.key, algo);
+        
+                    // Конвертируем IV из base64
+                    const iv = this.localCrypto.base64ToArrayBuffer(keyData.iv);
+        
+                    // Расшифровываем чанк
+                    const decryptedChunk = await this.localCrypto.aesDecrypt(chunk, key, iv);
+                    const chunkUint8 = new Uint8Array(decryptedChunk);
+        
+                    // Проверка CRC32 (закомментирована)
+                    // const expectedCrc32 = firstChunk.origins[chunkNumber];
+                    // const calculatedCrc32 = this.localCrypto.CRC32Byte(chunkUint8);
+        
+                    // if (calculatedCrc32 !== expectedCrc32) {
+                    //     console.error(
+                    //         `CRC32 mismatch for chunk ID ${chunkNumber}: calculated=${calculatedCrc32}, expected=${expectedCrc32}`
+                    //     );
+                    //     result.status = false;
+                    //     result.message = `CRC32 mismatch for chunk ID ${chunkNumber}`;
+                    //     return result;
+                    // }
+                    result.status = true
+                    result.message = true
+                    console.log(`Chunk ID ${chunkNumber} passed validation (CRC32 check skipped).`);
+                    
+                    
+                    decryptedChunks[chunkNumber] = chunkUint8; // Добавляем расшифрованный чанк
+                } catch (error) {
+                    console.error(`Error decrypting chunk ID ${chunkNumber}:`, error);
+                    result.status = false;
+                    result.message = `Error decrypting chunk ID ${chunkNumber}`;
+                    return result;
+                }
+            }
+        
+            console.log("All chunks decrypted successfully.");
+            decryptedChunks[0] = firstChunk;
+
+            // Формируем стандартный ответ
+            return { ...result, ...decryptedChunks };
+        },
+        assembleFileFromChunks: async (decryptedChunks, firstChunk) => {
+            console.log("Assembling file from chunks...");
+    
+            try {
+                // Извлекаем только числовые ключи, исключая нулевой чанк
+                const chunkKeys = Object.keys(decryptedChunks)
+                    .filter((key) => !isNaN(Number(key)) && Number(key) > 0)
+                    .map((key) => Number(key))
+                    .sort((a, b) => a - b); // Сортируем по порядку
+    
+                console.log("Chunk keys to assemble:", chunkKeys);
+    
+                // Собираем все чанки в единый массив
+                const totalSize = chunkKeys.reduce((acc, key) => acc + decryptedChunks[key].length, 0);
+                const fullFileArray = new Uint8Array(totalSize);
+    
+                let offset = 0;
+                for (const key of chunkKeys) {
+                    const chunk = decryptedChunks[key];
+                    console.log(`Appending chunk ${key} of size ${chunk.length} at offset ${offset}`);
+                    fullFileArray.set(chunk, offset);
+                    offset += chunk.length;
+                }
+    
+                console.log("All chunks merged into a single array.");
+    
+                // Извлекаем метаданные из нулевого чанка
+                const metadata = firstChunk.origins.meta;
+    
+                // Создаём Blob и возвращаем File
+                const fileBlob = new Blob([fullFileArray], { type: metadata.type });
+                const assembledFile = new File([fileBlob], metadata.name, {
+                    type: metadata.type,
+                    lastModified: metadata.lastModified,
+                });
+    
+                console.log("File assembled successfully:", assembledFile);
+    
+                return assembledFile;
+            } catch (error) {
+                console.error("Error assembling file:", error);
+                throw new Error("Failed to assemble file");
+            }
         }
     
+
         
 
 
@@ -723,16 +930,42 @@ document.addEventListener('DOMContentLoaded', () => {
             toDeleteKey: "Some origin key that should be saved in origin content file", // this one is responsable for deletion or modification
         }
         
-         const processor = new FileProcessor(config);
-        // const fileWasSent = await processor.sendFile(file,config.key,passwordConfig);
-        // console.log(fileWasSent)
+        const processor = new FileProcessor(config);
+        //const fileWasSent = await processor.sendFile(file,config.key,passwordConfig);
+        //console.log(fileWasSent)
 
-        // // png picture for the test
-        const fileWasGet = await processor.getFile('1732462986881',passwordConfig);
+        // // jpeg picture for the test
+        const fileWasGet = await processor.getFile('1736119777169',passwordConfig);
         console.log(fileWasGet)
 
+
+        
+        if (fileWasGet instanceof File) {
+            console.log("File retrieved successfully. Initiating download...");
+        
+            // Создаем временную ссылку для скачивания файла
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(fileWasGet);
+            link.download = fileWasGet.name || "downloaded_file"; // Используем имя файла или дефолтное
+        
+            // Программно кликаем по ссылке для начала скачивания
+            document.body.appendChild(link);
+            link.click();
+        
+            // Удаляем ссылку после скачивания
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        
+            console.log("Download initiated successfully.");
+        } else {
+            console.error("File was not retrieved successfully:", fileWasGet);
+        }
+
+
+
+
         // // exe file for the test
-        // const fileWasGet = await processor.getFile('1732463047705',passwordConfig);
+        // const fileWasGet = await processor.getFile('1736119821808',passwordConfig);
         // console.log(fileWasGet)
     });
 });
