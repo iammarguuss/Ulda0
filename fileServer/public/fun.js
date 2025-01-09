@@ -70,7 +70,7 @@ class FileProcessor {
 
             // signing via crc32
             //chunks = await this.SendFileProcessing.OriginSigning(chunks)
-            await this.SendFileProcessing.OriginSigning(chunks,fileMeta.Meta)
+            await this.SendFileProcessing.OriginSigning(chunks,fileMeta.Meta,file)
             console.log(chunks)
 
             // generating keis and ivs
@@ -424,9 +424,12 @@ class FileProcessor {
             }
             return chunks; // Возвращаем объект с чанками
         },
-        OriginSigning: async (chunks,meta) => {
+        OriginSigning: async (chunks, meta, file) => {
             // Проверка наличия контейнера для подписей
-            if (!chunks[0]) {chunks[0] = { origins: {} };}
+            if (!chunks[0]) {
+                chunks[0] = { origins: {} };
+            }
+        
             // Подписываем каждый чанк
             for (const chunkNumber in chunks) {
                 if (chunkNumber === "0") continue; // Пропускаем контейнер для подписей
@@ -434,8 +437,30 @@ class FileProcessor {
                 const signature = this.localCrypto.CRC32(chunk.toString());
                 chunks[0].origins[chunkNumber] = signature;
             }
-            //////////////////////////////////////////////////////////ID ADDED META HERE
+        
+            // Добавление метаданных
             chunks[0].origins.meta = btoa(JSON.stringify(meta));
+            chunks[0].origins.sha = await this.localCrypto.Sha256(file)
+            // Сборка виртуального файла из чанков
+            const chunkKeys = Object.keys(chunks)
+                .filter((key) => key !== "0") // Исключаем контейнер для подписей
+                .sort((a, b) => Number(a) - Number(b)); // Сортируем чанки по порядку
+        
+            const totalSize = chunkKeys.reduce((acc, key) => acc + chunks[key].length, 0);
+            const virtualFileArray = new Uint8Array(totalSize);
+        
+            let offset = 0;
+            for (const key of chunkKeys) {
+                const chunk = chunks[key];
+                virtualFileArray.set(chunk, offset);
+                offset += chunk.length;
+            }
+        
+            // Вычисление CRC32 от виртуального файла
+            const fileCRC32 = this.localCrypto.CRC32Byte(virtualFileArray);
+            chunks[0].origins.file = fileCRC32;
+        
+            console.log("File CRC32:", fileCRC32);
             return chunks;
         },
         generateKeysAndIVs: async (chunks) => {
@@ -507,7 +532,7 @@ class FileProcessor {
             const chunkNUmber = Object.keys(chunks).length;
             const chank_success = {};
             for (let i = 0; i < chunkNUmber; i++) {
-                this.socket.emit('Protocol', { chunk: chunks[i], sign: signatures[4][i], id: i, level: 4 });
+                this.socket.emit('ProtocolSend', { chunk: chunks[i], sign: signatures[4][i], id: i, level: 4 });
                 chank_success[i] = this.SendFileProcessing.Revelidator(i,chunks,signatures);
             }
             // Преобразуем объект chank_success в массив промисов
@@ -544,7 +569,7 @@ class FileProcessor {
                     }
                     // Если статус false, отправляем запрос с уменьшением уровня
                     if (!response.status) {
-                        this.socket.emit('Protocol', { 
+                        this.socket.emit('ProtocolSend', { 
                             chunk: chunks[chankID], 
                             sign: signatures[response.level - 1][chankID], 
                             id: chankID, 
@@ -677,7 +702,7 @@ class FileProcessor {
             console.log("Numeric chunk keys:", chunkKeys);
 
             // Отправляем запрос на сервер для инициализации протокола
-            this.socket.emit('Protocol', true);
+            this.socket.emit('ProtocolGet', true);
 
             // Создаем массив промисов для загрузки чанков
             const chunkPromises = [];
@@ -823,8 +848,8 @@ class FileProcessor {
                     const chunkUint8 = new Uint8Array(decryptedChunk);
         
                     // Проверка CRC32 (закомментирована)
-                    // const expectedCrc32 = firstChunk.origins[chunkNumber];
-                    // const calculatedCrc32 = this.localCrypto.CRC32Byte(chunkUint8);
+                    const expectedCrc32 = firstChunk.origins[chunkNumber];
+                    const calculatedCrc32 = this.localCrypto.CRC32Byte(chunkUint8);
         
                     // if (calculatedCrc32 !== expectedCrc32) {
                     //     console.error(
@@ -837,6 +862,7 @@ class FileProcessor {
                     result.status = true
                     result.message = true
                     console.log(`Chunk ID ${chunkNumber} passed validation (CRC32 check skipped).`);
+                    console.log(`But for ${chunkNumber} We get ${expectedCrc32} and ${calculatedCrc32}`);
                     
                     
                     decryptedChunks[chunkNumber] = chunkUint8; // Добавляем расшифрованный чанк
@@ -856,20 +882,20 @@ class FileProcessor {
         },
         assembleFileFromChunks: async (decryptedChunks, firstChunk) => {
             console.log("Assembling file from chunks...");
-    
+        
             try {
                 // Извлекаем только числовые ключи, исключая нулевой чанк
                 const chunkKeys = Object.keys(decryptedChunks)
                     .filter((key) => !isNaN(Number(key)) && Number(key) > 0)
                     .map((key) => Number(key))
                     .sort((a, b) => a - b); // Сортируем по порядку
-    
+        
                 console.log("Chunk keys to assemble:", chunkKeys);
-    
+        
                 // Собираем все чанки в единый массив
                 const totalSize = chunkKeys.reduce((acc, key) => acc + decryptedChunks[key].length, 0);
                 const fullFileArray = new Uint8Array(totalSize);
-    
+        
                 let offset = 0;
                 for (const key of chunkKeys) {
                     const chunk = decryptedChunks[key];
@@ -877,27 +903,54 @@ class FileProcessor {
                     fullFileArray.set(chunk, offset);
                     offset += chunk.length;
                 }
-    
+        
                 console.log("All chunks merged into a single array.");
-    
+        
                 // Извлекаем метаданные из нулевого чанка
                 const metadata = firstChunk.origins.meta;
-    
+        
+                // Преобразование Uint8Array в строку для CRC32
+                const fileString = new TextDecoder().decode(fullFileArray);
+        
+                // Проверяем CRC32 для собранного файла
+                const calculatedCRC32 = this.localCrypto.CRC32(fileString);
+                const expectedCRC32 = firstChunk.origins.file;
+        
+                // if (calculatedCRC32 !== expectedCRC32) {
+                //     console.error(
+                //         `CRC32 mismatch: calculated=${calculatedCRC32}, expected=${expectedCRC32}`
+                //     );
+                //     throw new Error("Assembled file CRC32 does not match original.");
+                // }
+        
+                // console.log("CRC32 validated successfully.");
+        
                 // Создаём Blob и возвращаем File
                 const fileBlob = new Blob([fullFileArray], { type: metadata.type });
                 const assembledFile = new File([fileBlob], metadata.name, {
                     type: metadata.type,
                     lastModified: metadata.lastModified,
                 });
-    
+        
                 console.log("File assembled successfully:", assembledFile);
-    
+
+                const ifOriginal = await this.localCrypto.Sha256(assembledFile)
+                console.log("ifOriginal is " + ifOriginal + " and " + firstChunk.origins.sha)
+                if(ifOriginal !== firstChunk.origins.sha){
+                    return {
+                        status: false,
+                        message: "This is not your file. It might has been modifed!!!"
+                    }
+                }
+
                 return assembledFile;
             } catch (error) {
                 console.error("Error assembling file:", error);
                 throw new Error("Failed to assemble file");
             }
         }
+        
+        
     
 
         
@@ -931,15 +984,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         const processor = new FileProcessor(config);
-        //const fileWasSent = await processor.sendFile(file,config.key,passwordConfig);
-        //console.log(fileWasSent)
+        const fileWasSent = await processor.sendFile(file,config.key,passwordConfig);
+        console.log(fileWasSent)
 
-        // // jpeg picture for the test
-        const fileWasGet = await processor.getFile('1736119777169',passwordConfig);
+        //await (async () => new Promise((resolve) => setTimeout(resolve, 1000)))();
+
+        // // jpeg picture for the test    
+        const fileWasGet = await processor.getFile(fileWasSent.fileLocation,passwordConfig);
         console.log(fileWasGet)
 
-
-        
         if (fileWasGet instanceof File) {
             console.log("File retrieved successfully. Initiating download...");
         
@@ -961,6 +1014,29 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error("File was not retrieved successfully:", fileWasGet);
         }
 
+
+
+        // Проверяем, является ли файл изображением
+        if (fileWasGet.type.startsWith("image/")) {
+            console.log("File is an image. Displaying on screen...");
+
+            // Создаем URL для файла
+            const imageUrl = URL.createObjectURL(fileWasGet);
+
+            // Создаем элемент изображения
+            const imgElement = document.createElement("img");
+            imgElement.src = imageUrl;
+            imgElement.alt = "Downloaded Image";
+            imgElement.style.maxWidth = "100%"; // Устанавливаем максимальную ширину для адаптации
+            imgElement.style.marginTop = "20px"; // Добавляем отступ сверху
+
+            // Вставляем изображение в конец документа
+            document.body.appendChild(imgElement);
+
+            console.log("Image displayed successfully.");
+        } else {
+            console.log("File is not an image. Skipping display.");
+        }
 
 
 

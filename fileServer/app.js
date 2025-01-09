@@ -66,7 +66,7 @@ io.on('connection', (socket) => {
     
         const fileID = message.fileID
 
-        socket.on('Protocol', (message) => {
+        socket.on('ProtocolGet', (message) => {
             console.log(`Received Protocol request: ${message}`);
         
             if (message === true) {
@@ -319,7 +319,7 @@ function handleFirstRequest(socket, message) {
         }
 
         // actual sending chunkings
-        socket.on('Protocol', (msg) => {
+        socket.on('ProtocolSend', (msg) => {
             if (typeof FileProofs.signatures[msg.level] === "undefined") {
                 FileProofs.signatures[msg.level] = {};
             }
@@ -358,7 +358,8 @@ function handleFirstRequest(socket, message) {
                 return;
             } else {
                 // Сборка и сохранение файла
-                const fileLocation = path.join(__dirname, 'files', `${Date.now()}`);
+                const randomSuffix = Math.floor(100 + Math.random() * 900); // Генерируем случайные 3 цифры (от 100 до 999)
+                const fileLocation = path.join(__dirname, 'files', `${Date.now()}${randomSuffix}`);
                 const data = Object.values(FileParts).reduce((acc, part) => Buffer.concat([acc, Buffer.from(part)]), Buffer.alloc(0));
                 
                 // Сохранение собранного файла
