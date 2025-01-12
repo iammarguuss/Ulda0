@@ -117,8 +117,6 @@ class FileProcessor {
             return {status:false,message:"Code was modifed and droped an error. RELOAD THE PAGE!"}
         }
     }
-    
-    
 
     localCrypto = {
         Sha256: async (text) => {
@@ -655,8 +653,6 @@ class FileProcessor {
         //     return { status: false, message: "An error occurred while fetching the file." };
         // }
     }
-
-
 
     GetFileProcessing = {    
         requestFile: (fileID) => {
