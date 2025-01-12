@@ -908,24 +908,7 @@ class FileProcessor {
         
                 // Извлекаем метаданные из нулевого чанка
                 const metadata = firstChunk.origins.meta;
-        
-                // Преобразование Uint8Array в строку для CRC32
-                const fileString = new TextDecoder().decode(fullFileArray);
-        
-                // Проверяем CRC32 для собранного файла
-                const calculatedCRC32 = this.localCrypto.CRC32(fileString);
-                const expectedCRC32 = firstChunk.origins.file;
-        
-                // if (calculatedCRC32 !== expectedCRC32) {
-                //     console.error(
-                //         `CRC32 mismatch: calculated=${calculatedCRC32}, expected=${expectedCRC32}`
-                //     );
-                //     throw new Error("Assembled file CRC32 does not match original.");
-                // }
-        
-                // console.log("CRC32 validated successfully.");
-        
-                // Создаём Blob и возвращаем File
+
                 const fileBlob = new Blob([fullFileArray], { type: metadata.type });
                 const assembledFile = new File([fileBlob], metadata.name, {
                     type: metadata.type,
@@ -949,17 +932,95 @@ class FileProcessor {
                 throw new Error("Failed to assemble file");
             }
         }
-        
-        
+    }
     
+    // this one displayes file (if immage) to ID
+    async displayFile(file, elementId) {
+        try {
+            const container = document.getElementById(elementId);
 
-        
+            if (!container) {
+                console.error(`Container with ID '${elementId}' not found.`);
+                return { status: false, message: `Element with ID '${elementId}' not found.` };
+            }
 
+            // Проверяем тип файла
+            if (file.type.startsWith("image/")) {
+                console.log("File is an image. Displaying on screen...");
 
+                // Создаём URL для файла
+                const imageUrl = URL.createObjectURL(file);
 
+                // Создаём элемент изображения
+                const imgElement = document.createElement("img");
+                imgElement.src = imageUrl;
+                imgElement.alt = "Downloaded Image";
+                imgElement.style.maxWidth = "100%"; // Адаптация размера
+                imgElement.style.marginTop = "20px"; // Отступ сверху
 
+                // Очищаем контейнер перед добавлением нового элемента
+                container.innerHTML = "";
+                container.appendChild(imgElement);
+
+                console.log("Image displayed successfully.");
+            } else {
+                console.log("File is not an image. Displaying file details...");
+
+                // Отображаем информацию о файле
+                const fileDetails = document.createElement("div");
+                fileDetails.textContent = `File Name: ${file.name}, File Type: ${file.type}, File Size: ${file.size} bytes`;
+
+                container.innerHTML = "";
+                container.appendChild(fileDetails);
+            }
+
+            return { status: true, message: "File displayed successfully." };
+        } catch (error) {
+            console.error("Error displaying file:", error);
+            return { status: false, message: "An error occurred while displaying the file." };
         }
-    };
+    }    
+    
+    async downloadFile(file) {
+        try {
+            if (!(file instanceof File)) {
+                console.error("Provided data is not a valid File instance.");
+                return { status: false, message: "Provided data is not a valid File instance." };
+            }
+
+            console.log("File retrieved successfully. Initiating download...");
+
+            // Создаем временную ссылку для скачивания файла
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(file);
+            link.download = file.name || "downloaded_file"; // Используем имя файла или дефолтное
+
+            // Программно кликаем по ссылке для начала скачивания
+            document.body.appendChild(link);
+            link.click();
+
+            // Удаляем ссылку после скачивания
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+
+            console.log("Download initiated successfully.");
+            return { status: true, message: "Download initiated successfully." };
+        } catch (error) {
+            console.error("Error initiating download:", error);
+            return { status: false, message: "An error occurred while initiating the download." };
+        }
+    }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+};
 
 
 
@@ -993,55 +1054,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const fileWasGet = await processor.getFile(fileWasSent.fileLocation,passwordConfig);
         console.log(fileWasGet)
 
-        if (fileWasGet instanceof File) {
-            console.log("File retrieved successfully. Initiating download...");
-        
-            // Создаем временную ссылку для скачивания файла
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(fileWasGet);
-            link.download = fileWasGet.name || "downloaded_file"; // Используем имя файла или дефолтное
-        
-            // Программно кликаем по ссылке для начала скачивания
-            document.body.appendChild(link);
-            link.click();
-        
-            // Удаляем ссылку после скачивания
-            document.body.removeChild(link);
-            URL.revokeObjectURL(link.href);
-        
-            console.log("Download initiated successfully.");
-        } else {
-            console.error("File was not retrieved successfully:", fileWasGet);
-        }
+        const displayResult = await processor.displayFile(fileWasGet, "outputContainer");
+        console.log(displayResult);
+
+        const downloadResult = await processor.downloadFile(fileWasGet);
+        console.log(downloadResult);
 
 
-
-        // Проверяем, является ли файл изображением
-        if (fileWasGet.type.startsWith("image/")) {
-            console.log("File is an image. Displaying on screen...");
-
-            // Создаем URL для файла
-            const imageUrl = URL.createObjectURL(fileWasGet);
-
-            // Создаем элемент изображения
-            const imgElement = document.createElement("img");
-            imgElement.src = imageUrl;
-            imgElement.alt = "Downloaded Image";
-            imgElement.style.maxWidth = "100%"; // Устанавливаем максимальную ширину для адаптации
-            imgElement.style.marginTop = "20px"; // Добавляем отступ сверху
-
-            // Вставляем изображение в конец документа
-            document.body.appendChild(imgElement);
-
-            console.log("Image displayed successfully.");
-        } else {
-            console.log("File is not an image. Skipping display.");
-        }
-
-
-
-        // // exe file for the test
-        // const fileWasGet = await processor.getFile('1736119821808',passwordConfig);
-        // console.log(fileWasGet)
     });
 });
